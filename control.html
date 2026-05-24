@@ -102,10 +102,10 @@
                 <table class="w-full text-center border-collapse">
                     <thead>
                         <tr class="bg-gray-50 border-b border-gray-100 text-xs text-gray-500 uppercase tracking-wider">
-                            <th class="px-2 lg:px-6 py-2 text-xs lg:text-xs font-semibold">时间</th>
-                            <th class="px-2 lg:px-6 py-2 text-xs lg:text-xs font-semibold">操作</th>
-                            <th class="px-2 lg:px-6 py-2 text-xs lg:text-xs font-semibold">设备</th>
-                            <th class="px-2 lg:px-6 py-2 text-xs lg:text-xs font-semibold">状态</th>
+                            <th class="px-2 lg:px-6 py-2 text-xs font-semibold text-center">时间</th>
+                            <th class="px-2 lg:px-6 py-2 text-xs font-semibold text-center">操作</th>
+                            <th class="px-2 lg:px-6 py-2 text-xs font-semibold text-center">设备</th>
+                            <th class="px-2 lg:px-6 py-2 text-xs font-semibold text-center">状态</th>
                         </tr>
                     </thead>
                     <tbody id="operationLogs" class="divide-y divide-gray-100">
@@ -211,10 +211,10 @@
 
                 return `
                 <tr class="hover:bg-gray-50 transition-colors">
-                    <td class="px-1 lg:px-6 py-1.5 text-[10px] lg:text-xs text-gray-500 font-mono whitespace-nowrap">${log.time.slice(-8)}</td>
-                    <td class="px-1 lg:px-6 py-1.5 text-[10px] lg:text-xs font-medium text-gray-700">${actionText}</td>
-                    <td class="px-1 lg:px-6 py-1.5 text-[10px] lg:text-xs text-gray-600">${deviceNames[log.device] || log.device}</td>
-                    <td class="px-1 lg:px-6 py-1.5"><span class="text-[10px] lg:text-xs text-green-600">成功</span></td>
+                    <td class="px-1 lg:px-6 py-1.5 text-[10px] lg:text-xs text-gray-500 font-mono whitespace-nowrap text-center">${log.time.slice(-8)}</td>
+                    <td class="px-1 lg:px-6 py-1.5 text-[10px] lg:text-xs font-medium text-gray-700 text-center">${actionText}</td>
+                    <td class="px-1 lg:px-6 py-1.5 text-[10px] lg:text-xs text-gray-600 text-center">${deviceNames[log.device] || log.device}</td>
+                    <td class="px-1 lg:px-6 py-1.5 text-center"><span class="text-[10px] lg:text-xs text-green-600">成功</span></td>
                 </tr>
                 `;
             }).join('');
@@ -410,7 +410,7 @@
             }
             
             setTimeout(syncStatus, 500);
-            setInterval(syncStatus, 60000);
+            setInterval(syncStatus, 10000);
         };
     </script>
     </div>
