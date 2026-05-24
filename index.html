@@ -388,9 +388,9 @@
             window.location.href = 'settings.html';
         }
 
-        if(checkOneNetConfig()) {
+        if(checkOneNetConfig() !== false) {
             setTimeout(syncData, 500);
-            setInterval(syncData, 30000);
+            setInterval(syncData, 5000);
         }
     </script>
     </div>
