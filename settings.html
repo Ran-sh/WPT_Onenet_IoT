@@ -91,14 +91,14 @@
         </div>
     </header>
 
-    <main class="p-8 flex-1 overflow-y-auto custom-scrollbar">
+    <main class="p-4 lg:p-8 flex-1 overflow-y-auto custom-scrollbar">
         
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-7xl mx-auto">
         <div class="space-y-8">
         <!-- Dynamic Sensor & Device Management -->
         <section>
             <div class="flex justify-between items-center mb-2.5 px-1">
-                <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest flex items-center">
+                <h3 class="text-xs lg:text-sm font-bold text-gray-400 uppercase tracking-widest flex items-center">
                     <i class="fas fa-microchip mr-1.5 text-xs"></i> 数据模型与阈值管理
                 </h3>
                 <div class="flex space-x-2">
@@ -115,7 +115,7 @@
 
         <!-- Notification Settings -->
         <section>
-            <h3 class="px-1 text-sm font-bold text-gray-400 uppercase mb-2.5 tracking-widest flex items-center">
+            <h3 class="px-1 text-xs lg:text-sm font-bold text-gray-400 uppercase mb-2.5 tracking-widest flex items-center">
                 <i class="fas fa-bell mr-1.5 text-xs"></i> 警报与通知
             </h3>
             <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
@@ -140,17 +140,17 @@
 
         <!-- System & Cloud Platform -->
         <section>
-            <h3 class="px-1 text-sm font-bold text-gray-400 uppercase mb-2.5 tracking-widest flex items-center">
+            <h3 class="px-1 text-xs lg:text-sm font-bold text-gray-400 uppercase mb-2.5 tracking-widest flex items-center">
                 <i class="fas fa-cog mr-1.5 text-xs"></i> 系统与云平台
             </h3>
             <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                 <div class="divide-y divide-gray-50/80">
-                    <div class="px-10 py-5">
+                    <div class="px-4 lg:px-10 py-4 lg:py-5">
                         <label class="block text-sm font-bold text-gray-500 mb-1.5">系统名称</label>
                         <p class="text-xs text-gray-400 mb-1.5">用于首页顶部展示，建议填写项目或机房名称，方便区分多套系统。</p>
                         <div class="flex items-center space-x-2">
                             <input type="text" id="dashboardTitleInput" placeholder="WPT Monitor" class="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-800 text-sm font-bold focus:outline-none focus:border-blue-500">
-                            <button onclick="saveDashboardTitle()" class="px-4 py-2 text-sm font-bold text-white bg-blue-500 rounded-lg active:bg-blue-600 transition shadow-sm">保存</button>
+                            <button onclick="saveDashboardTitle()" class="px-5 py-2 text-sm font-bold text-white bg-blue-600 rounded-lg active:bg-blue-700 transition shadow-md shadow-blue-500/30">保存</button>
                         </div>
                     </div>
                     <div class="px-10 py-5 flex items-center justify-between active:bg-gray-50 transition cursor-pointer" onclick="openOneNetConfigModal()">
@@ -187,7 +187,7 @@
         <div class="space-y-8">
         <!-- Author Info -->
         <section>
-            <h3 class="px-1 text-sm font-bold text-gray-400 uppercase mb-2.5 tracking-widest flex items-center">
+            <h3 class="px-1 text-xs lg:text-sm font-bold text-gray-400 uppercase mb-2.5 tracking-widest flex items-center">
                 <i class="fas fa-info-circle mr-1.5 text-xs"></i> 关于
             </h3>
             <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
