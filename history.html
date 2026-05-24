@@ -13,10 +13,8 @@
         body { background-color: #f4f7fb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         .card { background-color: white; border-radius: 1.25rem; box-shadow: 0 4px 10px rgba(0,0,0,0.02); }
         @media (max-width: 1023px) {
-            .hist-row { display: flex; flex-wrap: wrap; border-bottom: 1px solid #e5e7eb; }
-            .hist-row td:first-child { width: 100% !important; text-align: center !important; padding: 6px 4px 2px !important; font-size: 11px !important; color: #6b7280 !important; }
-            .hist-row td:nth-child(2) { width: 50% !important; text-align: center !important; padding: 2px 2px 6px !important; }
-            .hist-row td:nth-child(3) { width: 50% !important; text-align: center !important; padding: 2px 2px 6px !important; }
+            .hist-row td { white-space: nowrap; }
+            .hist-row td:first-child { font-size: 10px !important; white-space: normal !important; word-break: break-all; }
         }
     </style>
 </head>
@@ -400,18 +398,15 @@
 
                 html += `
                 <tr class="hover:bg-gray-50 transition-colors hist-row">
-                    <td class="px-2 lg:px-6 py-1 text-center hist-time">
-                        <span class="hidden lg:inline text-[11px] lg:text-sm text-gray-500 font-mono">${fullTime}</span>
-                        <div class="lg:hidden text-[11px] text-gray-500 font-mono leading-tight">
-                            <div>${dateStr}</div>
-                            <div>${timeStr}</div>
-                        </div>
+                    <td class="px-2 lg:px-6 py-1.5 text-center text-[10px] lg:text-sm text-gray-500 font-mono hist-time">
+                        <span class="lg:hidden">${timeStr}</span>
+                        <span class="hidden lg:inline">${fullTime}</span>
                     </td>
-                    <td class="px-2 lg:px-6 py-1 text-center">
+                    <td class="px-2 lg:px-6 py-1.5 text-center">
                         <span class="text-[11px] lg:text-sm font-bold ${finalColor}">${Number(value).toFixed(decimals)}</span>
                         <span class="text-[10px] lg:text-xs text-gray-400 ml-0.5">${selected.unit}</span>
                     </td>
-                    <td class="px-2 lg:px-6 py-1 text-center">
+                    <td class="px-2 lg:px-6 py-1.5 text-center">
                         <span class="text-[11px] lg:text-sm ${isExceed ? 'text-red-500' : 'text-green-500'}">${isExceed ? '✗' : '✓'}</span>
                     </td>
                 </tr>`;
