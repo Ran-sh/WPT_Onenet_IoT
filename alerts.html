@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>IoT后台系统 - 报警记录</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="js/config.js"></script>
+    <style>
+        body { background-color: #f4f7fb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        .card { background-color: white; border-radius: 1.25rem; box-shadow: 0 4px 10px rgba(0,0,0,0.02); }
+        
+        
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden bg-[#f4f7fb]" style="padding-bottom:env(safe-area-inset-bottom, 0px)">
+
+    <!-- PC Sidebar -->
+    <aside class="w-64 bg-white shadow-lg hidden lg:flex flex-col z-50 flex-shrink-0 relative h-screen">
+        <div class="h-20 border-b border-gray-100 flex items-center justify-center">
+            <h1 class="text-xl font-extrabold text-[#1a1f36] tracking-tight">IoT后台系统</h1>
+        </div>
+        <nav class="flex-1 py-6 space-y-2 px-4 overflow-y-auto custom-scrollbar">
+            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/'>
+                <i class="fas fa-home w-6 text-center mr-3"></i> 首页
+            </a>
+            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/monitoring'>
+                <i class="fas fa-chart-bar w-6 text-center mr-3"></i> 监测
+            </a>
+            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/control'>
+                <i class="fas fa-sliders-h w-6 text-center mr-3"></i> 控制
+            </a>
+            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/history'>
+                <i class="fas fa-chart-line w-6 text-center mr-3"></i> 历史
+            </a>
+            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/alerts'>
+                <i class="fas fa-bell w-6 text-center mr-3"></i> 报警
+            </a>
+            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/settings'>
+                <i class="fas fa-cog w-6 text-center mr-3"></i> 设置
+            </a>
+        </nav>
+        <div class="p-4 border-t border-gray-100 absolute bottom-0 w-full bg-white">
+            <div class="text-xs text-center text-gray-400 font-medium">IoT PC Web v1.0</div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col h-screen overflow-y-auto w-full relative custom-scrollbar">
+
+    <!-- Header -->
+    <header class="bg-white h-16 px-4 lg:px-8 flex items-center justify-between border-b border-gray-200 z-10 relative shadow-sm flex-shrink-0">
+        <div class="flex items-center space-x-4">
+            <h1 class="text-xl font-bold text-gray-800 tracking-tight">报警记录</h1>
+        </div>
+        <div class="flex items-center space-x-4">
+            <button onclick="markAllAsRead()" class="flex items-center space-x-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors font-medium text-sm">
+                <i class="fas fa-check-double text-xs"></i>
+                <span>一键已读</span>
+            </button>
+            <button onclick="clearAllAlerts()" class="flex items-center space-x-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors font-medium text-sm">
+                <i class="fas fa-trash-alt text-xs"></i>
+                <span>清空记录</span>
+            </button>
+            <div class="h-5 w-[1px] bg-gray-300"></div>
+            <div class="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold border border-blue-200">
+                <i class="fas fa-user-shield text-sm"></i>
+            </div>
+        </div>
+    </header>
+
+    <!-- Status Tabs -->
+    <div class="bg-white px-8 pt-4 flex space-x-6 border-b border-gray-200 flex-shrink-0" id="statusTabs">
+        <button data-filter="all" class="tab-btn pb-3 border-b-2 border-blue-600 text-blue-600 font-bold px-1 transition text-sm tracking-wide">全部</button>
+        <button data-filter="unread" class="tab-btn pb-3 text-gray-500 font-medium px-1 hover:text-gray-800 transition text-sm tracking-wide border-b-2 border-transparent">未读</button>
+        <button data-filter="read" class="tab-btn pb-3 text-gray-500 font-medium px-1 hover:text-gray-800 transition text-sm tracking-wide border-b-2 border-transparent">已处理</button>
+    </div>
+
+    <main class="p-8 flex-1 flex flex-col min-h-0">
+        <div class="bg-white rounded-2xl border border-gray-200 shadow-sm flex-1 flex flex-col overflow-hidden">
+            <div class="overflow-auto flex-1 custom-scrollbar">
+                <table class="w-full text-left border-collapse min-w-[800px]">
+                    <thead class="sticky top-0 z-10">
+                        <tr class="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase tracking-wider">
+                            <th class="px-6 py-4 font-semibold">状态</th>
+                            <th class="px-6 py-4 font-semibold">报警时间</th>
+                            <th class="px-6 py-4 font-semibold">报警内容</th>
+                            <th class="px-6 py-4 font-semibold">当前值</th>
+                            <th class="px-6 py-4 font-semibold">阈值</th>
+                            <th class="px-6 py-4 font-semibold text-right">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="alertsList" class="divide-y divide-gray-100">
+                        <!-- 动态生成的报警列表 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Custom Confirm Modal -->
+    <div id="confirmModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] hidden flex items-center justify-center px-6 opacity-0 transition-opacity duration-200">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl transform scale-95 transition-transform duration-200">
+            <h3 class="text-lg font-bold text-gray-900 mb-2">清空报警记录</h3>
+            <p class="text-sm text-gray-500 mb-6 leading-relaxed">确定要清空所有报警记录吗？此操作无法恢复。</p>
+            <div class="flex space-x-3">
+                <button onclick="closeConfirmModal()" class="flex-1 py-3 text-base font-bold text-gray-600 bg-gray-100 active:bg-gray-200 rounded-xl transition">取消</button>
+                <button onclick="executeClearAll()" class="flex-1 py-3 text-base font-bold text-white bg-red-500 active:bg-red-600 rounded-xl shadow-sm shadow-red-500/30 transition">确认清空</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Toast -->
+    <div id="toast" class="fixed top-20 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-10 py-3 rounded-full text-sm font-bold shadow-lg z-[110] transition-all duration-300 opacity-0 translate-y-[-20px] pointer-events-none">
+        <!-- Toast message -->
+    </div>
+
+
+    
+    <script>
+        // 动态加载报警数据
+        let alertsData = JSON.parse(localStorage.getItem('iot_alerts') || '[]');
+        const currentModel = typeof getDataModel === 'function' ? getDataModel() : { sensors: [] };
+
+        let currentFilter = 'all';
+
+        const alertsList = document.getElementById('alertsList');
+        const tabBtns = document.querySelectorAll('.tab-btn');
+
+        function renderAlerts() {
+            const filteredData = alertsData.filter(item => {
+                if (currentFilter === 'all') return true;
+                return item.status === currentFilter;
+            });
+
+            if (filteredData.length === 0) {
+                alertsList.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="px-6 py-20 text-center">
+                            <div class="flex flex-col items-center justify-center text-gray-400">
+                                <i class="fas fa-bell-slash text-4xl mb-4 opacity-20"></i>
+                                <span class="text-sm font-medium tracking-wide">暂无报警记录</span>
+                                ${currentFilter !== 'read' ? `
+                                    <button onclick="switchToReadTab()" class="mt-4 text-sm text-blue-600 hover:underline">
+                                        查看历史报警记录
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            alertsList.innerHTML = filteredData.map(alert => {
+                const sensorConfig = currentModel.sensors.find(s => s.id === alert.type) || {};
+                const decimals = typeof getDecimals === 'function' ? getDecimals(sensorConfig.dataType, sensorConfig.step) : 1;
+                let displayVal = parseFloat(alert.currentValue).toFixed(decimals);
+                let displayThresh = parseFloat(alert.threshold).toFixed(decimals);
+                
+                const isUnread = alert.status === 'unread';
+                const statusColor = isUnread ? (alert.isCritical ? 'red' : 'blue') : 'gray';
+                const statusDot = `<span class="w-2 h-2 rounded-full bg-${statusColor}-500 mr-2 ${isUnread ? `shadow-[0_0_6px_rgba(var(--tw-colors-${statusColor}-500),0.6)]` : ''}"></span>`;
+                const statusText = isUnread ? '未读' : '已处理';
+                const valColor = isUnread ? (alert.isCritical ? 'text-red-600' : 'text-blue-600') : 'text-gray-500';
+                
+                return `
+                <tr class="hover:bg-gray-50 transition-colors ${isUnread ? 'bg-white' : 'bg-gray-50/30'}">
+                    <td class="px-6 py-4">
+                        <div class="flex items-center">
+                            ${statusDot}
+                            <span class="text-sm font-medium text-gray-700">${statusText}</span>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 text-sm text-gray-500 font-mono">${alert.time}</td>
+                    <td class="px-6 py-4">
+                        <span class="text-sm font-bold ${isUnread ? 'text-gray-900' : 'text-gray-500'}">${alert.title}</span>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="text-sm font-bold ${valColor}">${displayVal}</span>
+                        <span class="text-xs text-gray-400 ml-1">${alert.unit}</span>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="text-sm font-medium text-gray-600">${displayThresh}</span>
+                        <span class="text-xs text-gray-400 ml-1">${alert.unit}</span>
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                        ${isUnread ? `
+                            <button onclick="ignoreAlert(${alert.id})" class="text-xs font-bold text-gray-500 hover:text-gray-700 hover:bg-gray-100 px-3 py-1.5 rounded-lg transition mr-2">忽略</button>
+                            <button onclick="viewDetail('${alert.type}')" class="text-xs font-bold text-blue-600 hover:text-white hover:bg-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg transition">查看详情</button>
+                        ` : `
+                            <span class="text-xs text-gray-400">无操作</span>
+                        `}
+                    </td>
+                </tr>
+                `;
+            }).join('');
+         }
+
+         function switchToReadTab() {
+             const readTab = document.querySelector('[data-filter="read"]');
+             if (readTab) readTab.click();
+             window.scrollTo({ top: 0, behavior: 'smooth' });
+         }
+
+         function markAllAsRead() {
+            alertsData.forEach(alert => {
+                alert.status = 'read';
+            });
+            localStorage.setItem('iot_alerts', JSON.stringify(alertsData));
+            renderAlerts();
+            showToast('已将所有报警标记为已处理');
+        }
+
+        function clearAllAlerts() {
+            if (alertsData.length === 0) {
+                showToast('暂无报警记录可清空');
+                return;
+            }
+            
+            const modal = document.getElementById('confirmModal');
+            const modalContent = modal.querySelector('div.bg-white');
+            
+            modal.classList.remove('hidden');
+            // Small delay to allow display:block to apply before animating opacity
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                modalContent.classList.remove('scale-95');
+            }, 10);
+        }
+        
+        function closeConfirmModal() {
+            const modal = document.getElementById('confirmModal');
+            const modalContent = modal.querySelector('div.bg-white');
+            
+            modal.classList.add('opacity-0');
+            modalContent.classList.add('scale-95');
+            
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 200);
+        }
+
+        function executeClearAll() {
+            closeConfirmModal();
+            
+            alertsData = [];
+            localStorage.removeItem('iot_alerts');
+            localStorage.removeItem('iot_alarm_states'); // 同时重置状态，允许重新报警
+            
+            // 清除首页缓存的旧数据，避免切换回去时再次闪烁出旧数据报警
+            localStorage.removeItem('iot_latest_data');
+            
+            // 立即隐藏横幅（如果它之前在首页触发过）
+            const alertBanner = document.getElementById('alertBanner');
+            if(alertBanner) alertBanner.style.display = 'none';
+
+            renderAlerts();
+            
+            setTimeout(() => {
+                showToast('已清空所有报警记录！');
+            }, 200);
+        }
+        
+        let toastTimeout;
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.remove('opacity-0', 'translate-y-[-20px]');
+            
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-[-20px]');
+            }, 2500);
+        }
+
+        function ignoreAlert(id) {
+            const alert = alertsData.find(a => a.id === id);
+            if (alert) {
+                alert.status = 'read';
+                localStorage.setItem('iot_alerts', JSON.stringify(alertsData));
+                renderAlerts();
+            }
+        }
+
+        function viewDetail(metricType) {
+            window.location.href = `history.html?metric=${metricType}`;
+        }
+
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', function() {
+                // Update tabs styling
+                tabBtns.forEach(b => {
+                    b.classList.remove('border-blue-500', 'text-blue-500');
+                    b.classList.add('text-gray-400', 'border-transparent');
+                });
+                this.classList.add('border-blue-500', 'text-blue-500');
+                this.classList.remove('text-gray-400', 'border-transparent');
+
+                currentFilter = this.dataset.filter;
+                renderAlerts();
+            });
+        });
+
+        // 初始渲染
+        renderAlerts();
+    </script>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const path = window.location.pathname.split('/').pop() || 'index.html';
+            const links = document.querySelectorAll('.nav-item');
+            links.forEach(link => {
+                if (link.getAttribute('href') === path) {
+                    link.classList.remove('text-gray-500', 'hover:bg-blue-50');
+                    link.classList.add('bg-blue-50', 'text-blue-600', 'shadow-sm');
+                }
+            });
+        });
+    </script>
+<script src="js/mobile-nav.js"></script>
+</body>
+</html>

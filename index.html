@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>IoT后台系统 - 首页</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="js/config.js"></script>
+    <script src="js/onenet.js"></script>
+    <style>
+        body { background-color: #f4f7fb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        .card { background-color: white; border-radius: 1.25rem; box-shadow: 0 4px 10px rgba(0,0,0,0.02); }
+        
+        
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden bg-[#f4f7fb]" style="padding-bottom:env(safe-area-inset-bottom, 0px)">
+
+    <!-- PC Sidebar -->
+    <aside class="w-64 bg-white shadow-lg flex-col z-50 flex-shrink-0 relative h-screen hidden lg:flex">
+        <div class="h-20 border-b border-gray-100 flex items-center justify-center">
+            <h1 class="text-xl font-extrabold text-[#1a1f36] tracking-tight">IoT后台系统</h1>
+        </div>
+        <nav class="flex-1 py-6 space-y-2 px-4 overflow-y-auto custom-scrollbar">
+            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/'>
+                <i class="fas fa-home w-6 text-center mr-3"></i> 首页
+            </a>
+            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/monitoring'>
+                <i class="fas fa-chart-bar w-6 text-center mr-3"></i> 监测
+            </a>
+            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/control'>
+                <i class="fas fa-sliders-h w-6 text-center mr-3"></i> 控制
+            </a>
+            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/history'>
+                <i class="fas fa-chart-line w-6 text-center mr-3"></i> 历史
+            </a>
+            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/alerts'>
+                <i class="fas fa-bell w-6 text-center mr-3"></i> 报警
+            </a>
+            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/settings'>
+                <i class="fas fa-cog w-6 text-center mr-3"></i> 设置
+            </a>
+        </nav>
+        <div class="p-4 border-t border-gray-100 absolute bottom-0 w-full bg-white">
+            <div class="text-xs text-center text-gray-400 font-medium">IoT PC Web v1.0</div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col h-screen overflow-y-auto w-full relative custom-scrollbar">
+
+    <!-- Top Header -->
+    <header class="bg-white h-16 px-4 lg:px-8 flex items-center justify-between border-b border-gray-200 z-10 relative shadow-sm flex-shrink-0">
+        <div class="flex items-center space-x-4">
+            <h1 id="mainTitle" class="text-xl font-bold text-gray-800 tracking-tight">IoT后台系统</h1>
+            <div class="h-5 w-[1px] bg-gray-300"></div>
+            <div class="flex items-center">
+                <span id="connIndicator" class="w-2.5 h-2.5 bg-gray-400 rounded-full mr-2 shadow-[0_0_8px_rgba(156,163,175,0.6)]"></span>
+                <span id="connStatus" class="text-gray-500 text-sm font-medium tracking-wide">正在连接...</span>
+            </div>
+        </div>
+        <div class="flex items-center space-x-4">
+            <button id="syncBtn" class="w-9 h-9 bg-gray-50 hover:bg-blue-50 border border-gray-200 rounded-lg flex items-center justify-center text-gray-600 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+            <div class="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold border border-blue-200">
+                <i class="fas fa-user-shield text-sm"></i>
+            </div>
+        </div>
+    </header>
+
+    <main class="px-4 lg:px-10 space-y-6 mt-6">
+        <!-- Alert Banner -->
+        <a class='hidden bg-[#fff5f5] border border-red-100 rounded-2xl p-4 items-center justify-between active:scale-[0.98] transition shadow-sm' href='/alerts' id='alertBanner'>
+            <div class="flex items-center">
+                <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-red-500 mr-3.5 flex-shrink-0">
+                    <i class="fas fa-exclamation-triangle text-sm"></i>
+                </div>
+                <div>
+                    <h3 class="text-red-500 font-bold text-base tracking-wide">环境异常警报</h3>
+                    <p id="alertMessage" class="text-red-400/90 text-xs mt-0.5 font-medium tracking-wide">检测到数据异常</p>
+                </div>
+            </div>
+            <i class="fas fa-chevron-right text-red-300 text-xs"></i>
+        </a>
+
+        <!-- Monitoring Cards Grid -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6" id="cardsGrid">
+            <!-- Dynamically populated by JS -->
+        </div>
+
+        </main>
+
+    
+
+    <!-- Custom Confirm Modal for OneNet Config -->
+    <div id="onenetAlertModal" class="fixed inset-0 z-[100] hidden items-center justify-center">
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity opacity-0" id="oamBackdrop" onclick="closeOneNetAlertModal()"></div>
+        <div class="bg-white rounded-2xl w-full max-w-md flex flex-col shadow-2xl z-10 transform scale-95 opacity-0 transition-all duration-200" id="oamContent">
+            <div class="p-6 pb-4 border-b border-gray-100 flex items-center">
+                <div class="w-10 h-10 rounded-full bg-yellow-50 flex items-center justify-center text-yellow-500 mr-3.5 flex-shrink-0">
+                    <i class="fas fa-exclamation-triangle text-[16px]"></i>
+                </div>
+                <div>
+                    <h3 class="text-lg font-bold text-gray-900 tracking-tight">未配置云平台</h3>
+                    <p class="text-xs text-gray-400 font-bold tracking-wide mt-0.5">需要配置 OneNet 参数</p>
+                </div>
+            </div>
+            
+            <div class="p-6">
+                <p class="text-sm text-gray-600 leading-relaxed">系统尚未配置云平台连接参数，无法获取设备数据。是否立即前往“系统设置”进行配置？</p>
+            </div>
+            
+            <div class="p-5 pt-0 flex space-x-3">
+                <button onclick="closeOneNetAlertModal()" class="flex-1 py-2.5 rounded-xl font-bold text-sm text-gray-500 bg-gray-100 active:bg-gray-200 transition">取消</button>
+                <button onclick="goToSettings()" class="flex-1 py-2.5 rounded-xl font-bold text-sm text-white bg-blue-500 active:bg-blue-600 transition shadow-[0_4px_10px_rgba(59,130,246,0.3)]">立即配置</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentModel = getDataModel();
+        
+        function loadDashboardTitle() {
+            const customTitle = localStorage.getItem('iot_dashboard_title');
+            if (customTitle) {
+                document.getElementById('mainTitle').innerText = customTitle;
+            } else {
+                document.getElementById('mainTitle').innerText = 'IoT后台系统';
+            }
+        }
+        
+        // Render Dashboard UI
+        function renderDashboard() {
+            const grid = document.getElementById('cardsGrid');
+            grid.innerHTML = '';
+
+            currentModel.sensors.forEach(s => {
+                const colors = COLOR_CLASSES[s.color] || COLOR_CLASSES['slate'];
+                grid.innerHTML += `
+                    <a href="monitoring.html" class="bg-white p-6 flex flex-col justify-between hover:shadow-lg hover:-translate-y-1 transition-all duration-300 border border-gray-100 min-h-[140px] rounded-2xl group cursor-pointer">
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="w-12 h-12 rounded-xl ${colors.bg} flex items-center justify-center ${colors.text} shadow-sm group-hover:scale-110 transition-transform">
+                                <i class="fas ${s.icon} text-lg"></i>
+                            </div>
+                            <span id="sensor-status-${s.id}" class="text-xs font-bold text-gray-500 bg-gray-50 px-3 py-1 rounded-lg border border-gray-200">获取中</span>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-500 font-medium mb-1 truncate">${s.name}</div>
+                            <div class="flex items-baseline flex-wrap">
+                                <span id="sensor-val-${s.id}" class="text-3xl font-extrabold text-gray-900 tracking-tight">--</span>
+                                <span class="text-gray-400 text-sm ml-1.5 font-bold">${s.unit}</span>
+                            </div>
+                        </div>
+                    </a>
+                `;
+            });
+
+            currentModel.controls.forEach(c => {
+                const colors = COLOR_CLASSES[c.color] || COLOR_CLASSES['slate'];
+                grid.innerHTML += `
+                    <a href="control.html" class="bg-white p-6 flex flex-col justify-between hover:shadow-lg hover:-translate-y-1 transition-all duration-300 border border-gray-100 rounded-2xl col-span-1 group cursor-pointer">
+                        <div class="flex justify-between items-center h-full">
+                            <div class="flex items-center space-x-4">
+                                <div class="w-12 h-12 rounded-xl ${colors.bg} flex items-center justify-center ${colors.text} shadow-sm group-hover:scale-110 transition-transform">
+                                    <i class="fas ${c.icon} text-lg"></i>
+                                </div>
+                                <div>
+                                    <div class="text-sm text-gray-500 font-medium mb-1">${c.name}</div>
+                                    <div class="text-lg font-bold text-gray-900 tracking-tight flex items-center">
+                                        <span id="control-status-${c.id}">--</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-400 group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors">
+                                <i class="fas fa-chevron-right text-xs"></i>
+                            </div>
+                        </div>
+                    </a>
+                `;
+            });
+        }
+
+        loadDashboardTitle();
+        renderDashboard();
+
+        // 同步数据逻辑
+        async function syncData() {
+            const syncBtn = document.getElementById('syncBtn');
+            const syncIcon = syncBtn.querySelector('i');
+            const connIndicator = document.getElementById('connIndicator');
+            const connStatus = document.getElementById('connStatus');
+            
+            syncIcon.classList.add('fa-spin');
+            syncBtn.disabled = true;
+
+            try {
+                if (typeof OneNetService !== 'undefined') {
+                    const data = await OneNetService.getLatestData();
+                    if (data) {
+                        updateUI(data);
+                        if (data._isOnline === false) {
+                            connIndicator.className = 'w-2.5 h-2.5 bg-yellow-500 rounded-full mr-2 shadow-[0_0_8px_rgba(234,179,8,0.6)]';
+                            connStatus.innerText = '设备离线';
+                            connStatus.className = 'text-yellow-600 text-sm font-bold tracking-wide';
+                        } else {
+                            connIndicator.className = 'w-2.5 h-2.5 bg-[#22c55e] rounded-full mr-2 shadow-[0_0_8px_rgba(34,197,94,0.4)]';
+                            connStatus.innerText = '设备在线';
+                            connStatus.className = 'text-[#22c55e] text-sm font-bold tracking-wide';
+                        }
+                    } else {
+                        throw new Error('未获取到有效数据');
+                    }
+                }
+            } catch (error) {
+                console.error('Sync failed:', error);
+            } finally {
+                setTimeout(() => {
+                    syncIcon.classList.remove('fa-spin');
+                    syncBtn.disabled = false;
+                }, 1000);
+            }
+        }
+
+        function updateUI(data, isFromCache = false) {
+            let hasAlert = false;
+            let latestAlertMsg = '';
+
+            const checkAlert = (type, val, thresh, title, isHigh) => {
+                if (isFromCache || data._isMock || data._isOnline === false) return;
+
+                let alarmStates = JSON.parse(localStorage.getItem('iot_alarm_states') || '{}');
+                const stateKey = `${type}_${isHigh ? 'high' : 'low'}`;
+
+                if (isHigh ? val > thresh : val < thresh) {
+                    hasAlert = true;
+                    latestAlertMsg = title;
+                    
+                    if (alarmStates[stateKey]) return;
+
+                    let alerts = JSON.parse(localStorage.getItem('iot_alerts') || '[]');
+                    const lastAlert = alerts.find(a => a.title === title);
+                    const now = new Date();
+                    
+                    if (!lastAlert || (now.getTime() - new Date(lastAlert.timestamp).getTime() > 5 * 60 * 1000)) {
+                        alarmStates[stateKey] = true;
+                        localStorage.setItem('iot_alarm_states', JSON.stringify(alarmStates));
+
+                        alerts.unshift({
+                            id: Date.now(),
+                            title: title,
+                            type: type,
+                            currentValue: val,
+                            threshold: thresh,
+                            unit: currentModel.sensors.find(s => s.id === type)?.unit || '',
+                            time: `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`,
+                            timestamp: now.getTime(),
+                            status: 'unread',
+                            isCritical: true
+                        });
+                        if(alerts.length > 50) alerts.pop();
+                        localStorage.setItem('iot_alerts', JSON.stringify(alerts));
+                    }
+                } else {
+                    if (alarmStates[stateKey]) {
+                        alarmStates[stateKey] = false;
+                        localStorage.setItem('iot_alarm_states', JSON.stringify(alarmStates));
+                    }
+                }
+            };
+
+            currentModel.sensors.forEach(s => {
+                if (data[s.id] !== undefined) {
+                    const decimals = typeof getDecimals === 'function' ? getDecimals(s.dataType, s.step) : 1;
+                    const val = Number(data[s.id]).toFixed(decimals);
+                    const valEl = document.getElementById(`sensor-val-${s.id}`);
+                    if(valEl) valEl.innerText = val;
+                    
+                    const statusEl = document.getElementById(`sensor-status-${s.id}`);
+                    if (statusEl) {
+                        let isAlert = false;
+                        const numericVal = Number(val);
+                        if (numericVal > s.max) {
+                            isAlert = true;
+                            statusEl.innerText = '过高';
+                            statusEl.className = 'text-xs font-bold text-red-600 bg-red-50 px-3 py-1 rounded-lg border border-red-200';
+                            checkAlert(s.id, numericVal, s.max, `${s.name}过高报警`, true);
+                        } else if (numericVal < s.min) {
+                            isAlert = true;
+                            statusEl.innerText = '过低';
+                            statusEl.className = 'text-xs font-bold text-red-600 bg-red-50 px-3 py-1 rounded-lg border border-red-200';
+                            checkAlert(s.id, numericVal, s.min, `${s.name}过低报警`, false);
+                        } else {
+                            statusEl.innerText = '正常';
+                            statusEl.className = 'text-xs font-bold text-green-600 bg-green-50 px-3 py-1 rounded-lg border border-green-200';
+                        }
+                    }
+                }
+            });
+
+            currentModel.controls.forEach(c => {
+                if (data[c.id] !== undefined) {
+                    const statusEl = document.getElementById(`control-status-${c.id}`);
+                    if (statusEl) {
+                        if (c.dataType === 'int32' || c.dataType === 'float' || c.dataType === 'double' || c.dataType === 'string') {
+                            statusEl.innerText = String(data[c.id]);
+                            const colors = COLOR_CLASSES[c.color] || COLOR_CLASSES['slate'];
+                            statusEl.className = `text-xs font-bold px-3 py-1 rounded-full tracking-wide border mr-3 ${colors.text} ${colors.bg} ${colors.border}`;
+                        } else {
+                            const isOn = !!data[c.id];
+                            statusEl.innerText = isOn ? '已开启' : '已关闭';
+                            const colors = COLOR_CLASSES[c.color] || COLOR_CLASSES['slate'];
+                            statusEl.className = `text-xs font-bold px-3 py-1 rounded-full tracking-wide border mr-3 ${isOn ? `${colors.text} ${colors.bg} ${colors.border}` : 'text-gray-500 bg-gray-50 border-gray-200/50'}`;
+                        }
+                    }
+                }
+            });
+
+            const alertBanner = document.getElementById('alertBanner');
+            if (hasAlert) {
+                alertBanner.style.display = 'flex';
+                document.getElementById('alertMessage').innerText = latestAlertMsg;
+            } else {
+                alertBanner.style.display = 'none';
+            }
+        }
+
+        document.getElementById('syncBtn').addEventListener('click', syncData);
+
+        // Add visibility listener to detect changes from settings page
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                loadDashboardTitle();
+                const newModelStr = localStorage.getItem('iot_data_model');
+                if (newModelStr && JSON.stringify(currentModel) !== newModelStr) {
+                    currentModel = JSON.parse(newModelStr);
+                    renderDashboard(); // Re-render completely with new model
+                    syncData(); // Fetch fresh data for the new model
+                }
+            }
+        });
+
+        const cachedData = localStorage.getItem('iot_latest_data');
+        if (cachedData) {
+            try { updateUI(JSON.parse(cachedData), true); } 
+            catch (e) { console.error(e); }
+        }
+
+        // Check OneNet config on startup
+        function checkOneNetConfig() {
+            const config = JSON.parse(localStorage.getItem('iot_onenet_config') || 'null');
+            if (!config || !config.productId || !config.deviceName || !config.token) {
+                const connIndicator = document.getElementById('connIndicator');
+                const connStatus = document.getElementById('connStatus');
+                if(connIndicator && connStatus) {
+                    connIndicator.className = 'w-2.5 h-2.5 bg-yellow-500 rounded-full mr-2 shadow-[0_0_8px_rgba(234,179,8,0.6)]';
+                    connStatus.innerText = '请先前往设置配置OneNet';
+                    connStatus.className = 'text-yellow-600 text-sm font-bold tracking-wide';
+                }
+                setTimeout(openOneNetAlertModal, 500);
+                return false;
+            }
+            return true;
+        }
+
+        function openOneNetAlertModal() {
+            const modal = document.getElementById('onenetAlertModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setTimeout(() => {
+                document.getElementById('oamBackdrop').classList.remove('opacity-0');
+                document.getElementById('oamContent').classList.remove('scale-95', 'opacity-0');
+            }, 10);
+        }
+
+        function closeOneNetAlertModal() {
+            document.getElementById('oamBackdrop').classList.add('opacity-0');
+            document.getElementById('oamContent').classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                const modal = document.getElementById('onenetAlertModal');
+                modal.classList.remove('flex');
+                modal.classList.add('hidden');
+            }, 200);
+        }
+
+        function goToSettings() {
+            window.location.href = 'settings.html';
+        }
+
+        if(checkOneNetConfig()) {
+            setTimeout(syncData, 500);
+            setInterval(syncData, 30000);
+        }
+    </script>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const path = window.location.pathname.split('/').pop() || 'index.html';
+            const links = document.querySelectorAll('.nav-item');
+            links.forEach(link => {
+                if (link.getAttribute('href') === path) {
+                    link.classList.remove('text-gray-500', 'hover:bg-blue-50');
+                    link.classList.add('bg-blue-50', 'text-blue-600', 'shadow-sm');
+                }
+            });
+        });
+    </script>
+<script src="js/mobile-nav.js"></script>
+</body>
+</html>

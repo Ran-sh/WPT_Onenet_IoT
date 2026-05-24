@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>IoT后台系统 - 登录</title>
+    <link rel="manifest" href="/manifest.json">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+        }
+        .bg-gradient-custom {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex bg-gray-50 overflow-hidden">
+    
+    <!-- Left Side: Banner / Branding -->
+    <div class="hidden lg:flex lg:w-1/2 bg-gradient-custom text-white flex-col justify-between p-12 relative overflow-hidden">
+        <!-- Background decorative elements -->
+        <div class="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none opacity-20">
+            <div class="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] rounded-full bg-white blur-3xl"></div>
+            <div class="absolute bottom-[10%] right-[10%] w-[30%] h-[30%] rounded-full bg-blue-300 blur-3xl"></div>
+        </div>
+
+        <div class="relative z-10 flex items-center space-x-3">
+            <div class="w-12 h-12 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center shadow-lg border border-white/30">
+                <i class="fas fa-network-wired text-2xl text-white"></i>
+            </div>
+            <span class="text-2xl font-extrabold tracking-wider">IoT Platform</span>
+        </div>
+
+        <div class="relative z-10 mb-20">
+            <h1 class="text-5xl font-extrabold leading-tight mb-6">连接一切<br/>掌控全局</h1>
+            <p class="text-lg text-blue-100 max-w-md leading-relaxed">
+                企业级物联网设备监控与管理平台。提供实时数据监测、远程设备控制、历史趋势分析以及异常报警提醒，助力您的数字化转型。
+            </p>
+        </div>
+
+        <div class="relative z-10 text-sm text-blue-200 font-medium tracking-wide">
+            © 2026 硫氢化钠 开源物联网工具
+        </div>
+    </div>
+
+    <!-- Right Side: Login Form -->
+    <div class="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white relative h-screen">
+        <div class="w-full max-w-md space-y-8">
+            <div class="text-center lg:text-left mb-10">
+                <h2 class="text-3xl font-extrabold text-gray-900 mb-2">欢迎登录</h2>
+                <p class="text-gray-500 text-sm">请输入您的管理员账号与密码进入系统</p>
+            </div>
+
+            <form id="loginForm" class="space-y-6">
+                <div>
+                    <label for="username" class="block text-sm font-bold text-gray-700 mb-2">账号</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
+                            <i class="fas fa-user text-sm"></i>
+                        </div>
+                        <input type="text" id="username" name="username" placeholder="请输入管理员账号" required
+                            class="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 text-sm focus:outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 transition-all">
+                    </div>
+                </div>
+
+                <div>
+                    <label for="password" class="block text-sm font-bold text-gray-700 mb-2">密码</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
+                            <i class="fas fa-lock text-sm"></i>
+                        </div>
+                        <input type="password" id="password" name="password" placeholder="请输入密码" required
+                            class="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 text-sm focus:outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 transition-all">
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between">
+                    <label class="flex items-center cursor-pointer group">
+                        <input type="checkbox" id="autoLogin" class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                        <span class="ml-2 text-sm text-gray-500 group-hover:text-gray-700 transition-colors">自动登录 (7天)</span>
+                    </label>
+                    <a href="#" class="text-sm font-medium text-blue-600 hover:text-blue-500 transition-colors">忘记密码?</a>
+                </div>
+
+                <button type="submit" 
+                    class="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-600/30 transition-all transform hover:-translate-y-0.5">
+                    登录系统
+                </button>
+            </form>
+
+            <!-- Mobile Footer -->
+            <div class="lg:hidden text-center text-gray-400 text-xs font-medium tracking-wide mt-12">
+                © 2026 硫氢化钠 开源物联网工具
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Toast -->
+    <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 bg-red-50 border border-red-200 text-red-600 px-6 py-3 rounded-lg text-sm font-bold shadow-lg shadow-red-500/10 opacity-0 transition-all duration-300 pointer-events-none z-50 transform -translate-y-4 flex items-center">
+        <i class="fas fa-exclamation-circle mr-2"></i>
+        <span id="toastMsg" class="ml-2">账号或密码错误</span>
+    </div>
+
+    <script>
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').innerText = msg;
+            toast.classList.remove('opacity-0', '-translate-y-4');
+            toast.classList.add('opacity-100', 'translate-y-0');
+            setTimeout(() => {
+                toast.classList.add('opacity-0', '-translate-y-4');
+                toast.classList.remove('opacity-100', 'translate-y-0');
+            }, 3000);
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const lastLogin = localStorage.getItem('lastLoginTime');
+            if (lastLogin) {
+                const now = Date.now();
+                const sevenDays = 7 * 24 * 60 * 60 * 1000;
+                if (now - parseInt(lastLogin) < sevenDays) {
+                    window.location.href = 'index.html';
+                }
+            }
+        });
+
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const autoLogin = document.getElementById('autoLogin').checked;
+            
+            if (username === 'admin' && password === '123456789') {
+                if (autoLogin) {
+                    localStorage.setItem('lastLoginTime', Date.now());
+                } else {
+                    localStorage.removeItem('lastLoginTime');
+                }
+                window.location.href = 'index.html';
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.register('/service-worker.js');
+                }
+            } else {
+                showToast('账号或密码错误！');
+            }
+        });
+    </script>
+</body>
+</html>
