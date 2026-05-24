@@ -102,8 +102,10 @@
                 <table class="w-full text-left border-collapse">
                     <thead>
                         <tr class="bg-gray-50 border-b border-gray-100 text-xs text-gray-500 uppercase tracking-wider">
-                            <th class="px-3 lg:px-6 py-2 font-semibold">时间</th>
-                            <th class="px-3 lg:px-6 py-2 font-semibold">操作</th>
+                            <th class="px-2 lg:px-6 py-2 text-xs lg:text-xs font-semibold">时间</th>
+                            <th class="px-2 lg:px-6 py-2 text-xs lg:text-xs font-semibold">操作</th>
+                            <th class="px-2 lg:px-6 py-2 text-xs lg:text-xs font-semibold">设备</th>
+                            <th class="px-2 lg:px-6 py-2 text-xs lg:text-xs font-semibold">状态</th>
                         </tr>
                     </thead>
                     <tbody id="operationLogs" class="divide-y divide-gray-100">
@@ -202,15 +204,17 @@
                 const isTurnOn = log.status === true;
                 let actionText;
                 if (typeof log.status === 'boolean') {
-                    actionText = isTurnOn ? '启动' : '停止';
+                    actionText = isTurnOn ? '开启设备' : '关闭设备';
                 } else {
-                    actionText = '设 ' + log.status;
+                    actionText = `设置值为 ${log.status}`;
                 }
 
                 return `
                 <tr class="hover:bg-gray-50 transition-colors">
-                    <td class="px-3 lg:px-6 py-2 text-xs text-gray-400 font-mono">${log.time.slice(-5)}</td>
-                    <td class="px-3 lg:px-6 py-2 text-xs font-medium text-gray-700">${actionText}</td>
+                    <td class="px-1 lg:px-6 py-1.5 text-[10px] lg:text-xs text-gray-500 font-mono whitespace-nowrap">${log.time.slice(-8)}</td>
+                    <td class="px-1 lg:px-6 py-1.5 text-[10px] lg:text-xs font-medium text-gray-700">${actionText}</td>
+                    <td class="px-1 lg:px-6 py-1.5 text-[10px] lg:text-xs text-gray-600">${deviceNames[log.device] || log.device}</td>
+                    <td class="px-1 lg:px-6 py-1.5"><span class="text-[10px] lg:text-xs text-green-600">成功</span></td>
                 </tr>
                 `;
             }).join('');
