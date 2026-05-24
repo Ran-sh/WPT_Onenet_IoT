@@ -102,10 +102,8 @@
                 <table class="w-full text-left border-collapse">
                     <thead>
                         <tr class="bg-gray-50 border-b border-gray-100 text-xs text-gray-500 uppercase tracking-wider">
-                            <th class="px-6 py-3 font-semibold">执行时间</th>
-                            <th class="px-6 py-3 font-semibold">操作内容</th>
-                            <th class="px-6 py-3 font-semibold">设备</th>
-                            <th class="px-6 py-3 font-semibold">状态</th>
+                            <th class="px-3 lg:px-6 py-2 font-semibold">时间</th>
+                            <th class="px-3 lg:px-6 py-2 font-semibold">操作</th>
                         </tr>
                     </thead>
                     <tbody id="operationLogs" class="divide-y divide-gray-100">
@@ -204,27 +202,15 @@
                 const isTurnOn = log.status === true;
                 let actionText;
                 if (typeof log.status === 'boolean') {
-                    actionText = isTurnOn ? '开启设备' : '关闭设备';
+                    actionText = isTurnOn ? '启动' : '停止';
                 } else {
-                    actionText = `设置值为 ${log.status}`;
+                    actionText = '设 ' + log.status;
                 }
-                const iconColor = isTurnOn || typeof log.status !== 'boolean' ? 'blue' : 'gray';
-                
+
                 return `
                 <tr class="hover:bg-gray-50 transition-colors">
-                    <td class="px-6 py-4 text-xs text-gray-500 font-mono">${log.time}</td>
-                    <td class="px-6 py-4">
-                        <div class="flex items-center">
-                            <span class="w-2 h-2 rounded-full bg-${iconColor}-500 mr-2"></span>
-                            <span class="text-sm font-medium text-gray-900">${actionText}</span>
-                        </div>
-                    </td>
-                    <td class="px-6 py-4 text-sm text-gray-600">${deviceNames[log.device] || log.device}</td>
-                    <td class="px-6 py-4">
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            执行成功
-                        </span>
-                    </td>
+                    <td class="px-3 lg:px-6 py-2 text-xs text-gray-400 font-mono">${log.time.slice(-5)}</td>
+                    <td class="px-3 lg:px-6 py-2 text-xs font-medium text-gray-700">${actionText}</td>
                 </tr>
                 `;
             }).join('');
