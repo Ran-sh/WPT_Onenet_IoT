@@ -14,7 +14,9 @@
         .card { background-color: white; border-radius: 1.25rem; box-shadow: 0 4px 10px rgba(0,0,0,0.02); }
         @media (max-width: 1023px) {
             .hist-row td { white-space: nowrap; }
-            .hist-row td:first-child { font-size: 10px !important; white-space: normal !important; word-break: break-all; }
+            .hist-row td:first-child { width: 35%; }
+            .hist-row td:nth-child(2) { width: 40%; }
+            .hist-row td:nth-child(3) { width: 25%; }
         }
     </style>
 </head>
@@ -398,9 +400,11 @@
 
                 html += `
                 <tr class="hover:bg-gray-50 transition-colors hist-row">
-                    <td class="px-2 lg:px-6 py-1.5 text-center text-[10px] lg:text-sm text-gray-500 font-mono hist-time">
-                        <span class="lg:hidden">${timeStr}</span>
-                        <span class="hidden lg:inline">${fullTime}</span>
+                    <td class="px-2 lg:px-6 py-1.5 text-center align-middle hist-time">
+                        <div class="flex flex-col items-center leading-tight">
+                            <span class="text-[9px] lg:text-xs text-gray-400 font-mono">${dateStr}</span>
+                            <span class="text-[10px] lg:text-sm text-gray-500 font-mono">${timeStr}</span>
+                        </div>
                     </td>
                     <td class="px-2 lg:px-6 py-1.5 text-center">
                         <span class="text-[11px] lg:text-sm font-bold ${finalColor}">${Number(value).toFixed(decimals)}</span>
