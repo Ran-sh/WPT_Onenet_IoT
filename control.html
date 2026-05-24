@@ -343,6 +343,7 @@
             try {
                 if (typeof OneNetService !== 'undefined') {
                     const data = await OneNetService.getLatestData();
+                    console.log('[Sync] got data:', data);
                     if (data) {
                         controls.forEach(c => {
                             if (data[c.id] !== undefined) {
@@ -411,7 +412,14 @@
             
             setTimeout(syncStatus, 500);
             setInterval(syncStatus, 10000);
+            console.log('[Control] sync started');
         };
+        // 兜底: 如果 onload 已过, 直接启动
+        if (document.readyState === 'complete') {
+            setTimeout(syncStatus, 500);
+            setInterval(syncStatus, 10000);
+            console.log('[Control] sync started (fallback)');
+        }
     </script>
     </div>
 
