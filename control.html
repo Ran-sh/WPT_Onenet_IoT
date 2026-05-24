@@ -81,7 +81,7 @@
             </div>
         </div>
         <div class="flex items-center space-x-2 lg:space-x-3">
-            <button onclick="syncStatus()" class="w-7 h-7 lg:w-8 lg:h-8 bg-gray-50 hover:bg-blue-50 border border-gray-200 rounded-lg flex items-center justify-center text-gray-500 hover:text-blue-500 transition">
+            <button id="syncBtn2" onclick="syncStatus()" class="w-7 h-7 lg:w-8 lg:h-8 bg-gray-50 hover:bg-blue-50 border border-gray-200 rounded-lg flex items-center justify-center text-gray-500 hover:text-blue-500 transition">
                 <i class="fas fa-sync-alt text-xs"></i>
             </button>
             <div class="w-7 h-7 lg:w-9 lg:h-9 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold border border-blue-200">
@@ -345,16 +345,16 @@
         }
 
         async function syncStatus() {
+            const icon = document.querySelector('#syncBtn2 i');
+            if (icon) icon.classList.add('fa-spin');
             try {
                 if (typeof OneNetService !== 'undefined') {
                     const data = await OneNetService.getLatestData();
-                    console.log('[Sync] got data:', data);
                     if (data) {
                         controls.forEach(c => {
                             if (data[c.id] !== undefined) {
                                 if (c.dataType === 'int32' || c.dataType === 'float' || c.dataType === 'double') {
                                     const input = document.getElementById(`input-${c.id}`);
-                                    // only update if not currently focused to avoid typing interruption
                                     if (input && document.activeElement !== input) {
                                         input.value = data[c.id];
                                     }
@@ -377,6 +377,7 @@
             } catch (error) {
                 console.error('Sync status failed:', error);
             }
+            if (icon) setTimeout(() => icon.classList.remove('fa-spin'), 800);
         }
 
         window.onload = () => {
