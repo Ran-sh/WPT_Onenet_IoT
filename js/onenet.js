@@ -110,10 +110,18 @@ class OneNetService {
                 const model = typeof getDataModel === 'function' ? getDataModel() : { sensors: [], controls: [] };
                 
                 model.sensors.forEach(s => {
-                    if (rawData[s.cloudKey] !== undefined) data[s.id] = rawData[s.cloudKey];
+                    if (rawData[s.cloudKey] !== undefined) {
+                        let v = rawData[s.cloudKey];
+                        if (s.fromCloud) v = s.fromCloud(v);
+                        data[s.id] = v;
+                    }
                 });
                 model.controls.forEach(c => {
-                    if (rawData[c.cloudKey] !== undefined) data[c.id] = rawData[c.cloudKey];
+                    if (rawData[c.cloudKey] !== undefined) {
+                        let v = rawData[c.cloudKey];
+                        if (c.fromCloud) v = c.fromCloud(v);
+                        data[c.id] = v;
+                    }
                 });
                 
                 // 将最新数据缓存到 localStorage，避免页面切换时的闪烁和预设值问题
@@ -227,11 +235,13 @@ class OneNetService {
             model.sensors.forEach(s => reverseMap[s.id] = s.cloudKey);
 
             for (const key in params) {
+                let val = params[key];
+                const ctrl = model.controls.find(c => c.id === key);
+                if (ctrl && ctrl.toCloud) val = ctrl.toCloud(val);
                 if (reverseMap[key]) {
-                    mappedParams[reverseMap[key]] = params[key];
+                    mappedParams[reverseMap[key]] = val;
                 } else {
-                    // Fallback for non-mapped or direct keys
-                    mappedParams[key] = params[key];
+                    mappedParams[key] = val;
                 }
             }
 
