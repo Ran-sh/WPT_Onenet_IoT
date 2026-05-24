@@ -6,11 +6,11 @@
   nav.style.cssText = 'padding:8px 0;padding-bottom:max(8px, env(safe-area-inset-bottom))';
 
   const items = [
-    { href: '/', icon: 'fa-home', label: '首页' },
-    { href: '/monitoring', icon: 'fa-chart-bar', label: '监测' },
-    { href: '/control', icon: 'fa-sliders-h', label: '控制' },
-    { href: '/history', icon: 'fa-chart-line', label: '历史' },
-    { href: '/settings', icon: 'fa-cog', label: '设置' }
+    { href: './', icon: 'fa-home', label: '首页' },
+    { href: './monitoring.html', icon: 'fa-chart-bar', label: '监测' },
+    { href: './control.html', icon: 'fa-sliders-h', label: '控制' },
+    { href: './history.html', icon: 'fa-chart-line', label: '历史' },
+    { href: './settings.html', icon: 'fa-cog', label: '设置' }
   ];
 
   let path = window.location.pathname.replace(/\.html$/, '').replace(/\/$/, '') || '/';
