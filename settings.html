@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IoT后台系统 - 设置</title>
+    <title>WPT Monitor - 设置</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <script src="js/config.js"></script>
@@ -43,7 +43,7 @@
     <!-- PC Sidebar -->
     <aside class="w-64 bg-white shadow-lg hidden lg:flex flex-col z-50 flex-shrink-0 relative h-screen">
         <div class="h-20 border-b border-gray-100 flex items-center justify-center">
-            <h1 class="text-xl font-extrabold text-[#1a1f36] tracking-tight">IoT后台系统</h1>
+            <h1 class="text-xl font-extrabold text-[#1a1f36] tracking-tight">WPT Monitor</h1>
         </div>
         <nav class="flex-1 py-6 space-y-2 px-4 overflow-y-auto custom-scrollbar">
             <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/'>
@@ -149,7 +149,7 @@
                         <label class="block text-sm font-bold text-gray-500 mb-1.5">系统名称</label>
                         <p class="text-xs text-gray-400 mb-1.5">用于首页顶部展示，建议填写项目或机房名称，方便区分多套系统。</p>
                         <div class="flex items-center space-x-2">
-                            <input type="text" id="dashboardTitleInput" placeholder="IoT后台系统" class="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-800 text-sm font-bold focus:outline-none focus:border-blue-500">
+                            <input type="text" id="dashboardTitleInput" placeholder="WPT Monitor" class="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-800 text-sm font-bold focus:outline-none focus:border-blue-500">
                             <button onclick="saveDashboardTitle()" class="px-4 py-2 text-sm font-bold text-white bg-blue-500 rounded-lg active:bg-blue-600 transition shadow-sm">保存</button>
                         </div>
                     </div>
@@ -195,7 +195,7 @@
                     <div class="w-14 h-14 bg-teal-50 rounded-full flex items-center justify-center text-teal-500 mb-1">
                         <i class="fas fa-code text-2xl"></i>
                     </div>
-                    <h4 class="text-base font-bold text-gray-900 tracking-tight">硫氢化钠开源物联网工具</h4>
+                    <h4 class="text-base font-bold text-gray-900 tracking-tight">Rssss开源物联网工具</h4>
                     
                     <div class="w-full space-y-2 mt-2">
                         <div class="flex items-center justify-between bg-gray-50/80 p-3 rounded-xl">
@@ -203,7 +203,7 @@
                                 <i class="fas fa-user-edit w-5 text-center text-sm"></i>
                                 <span class="text-sm font-bold ml-1.5">作者</span>
                             </div>
-                            <span class="text-sm font-bold text-gray-700">硫氢化钠</span>
+                            <span class="text-sm font-bold text-gray-700">Rssss</span>
                         </div>
                         
                         <a href="mailto:liuqingla2005@163.com" class="flex items-center justify-between bg-gray-50/80 p-3 rounded-xl active:bg-gray-100 transition">
@@ -441,7 +441,7 @@
             if (config.soundAlert !== undefined) soundToggle.checked = config.soundAlert;
             updateToggleUI(soundToggle);
             
-            document.getElementById('dashboardTitleInput').value = localStorage.getItem('iot_dashboard_title') || 'IoT后台系统';
+            document.getElementById('dashboardTitleInput').value = localStorage.getItem('iot_dashboard_title') || 'WPT Monitor';
             
             const onenetConfig = JSON.parse(localStorage.getItem('iot_onenet_config') || 'null');
             const statusEl = document.getElementById('onenetStatusText');
@@ -470,7 +470,7 @@
             } else {
                 localStorage.removeItem('iot_dashboard_title');
                 showToast('已恢复默认标题');
-                input.value = 'IoT后台系统';
+                input.value = 'WPT Monitor';
             }
         }
 

@@ -1,5 +1,5 @@
 /**
- * OneNet IoT Platform Service
+ * OneNet WPT Monitor Service
  * 用于与 OneNet 云平台进行数据同步
  */
 
