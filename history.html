@@ -94,7 +94,7 @@
 
         <!-- Data Table -->
         <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-            <div class="flex justify-between items-center px-4 lg:px-6 py-3 border-b border-gray-100 bg-gray-50/50">
+            <div class="px-4 lg:px-6 py-3 border-b border-gray-100 bg-gray-50/50 text-center">
                 <h3 class="font-bold text-gray-800 text-sm">历史记录</h3>
             </div>
             <div class="overflow-x-auto">
@@ -387,18 +387,26 @@
                 const value = selected.data[i];
                 if (value === null) continue;
                 
-                const displayTime = fullTimes[i] || labels[i];
-                
+                const fullTime = fullTimes[i] || labels[i];
+                const parts = fullTime.split(' ');
+                const dateStr = parts[0] || '';
+                const timeStr = parts[1] || fullTime;
+
                 const isExceed = (value < thMin || value > thMax);
-                const finalColor = isExceed ? 'text-red-500' : 'text-gray-800'; // Default text color for non-exceeding values
-                
-                // Find the original sensor config to get dataType and step
+                const finalColor = isExceed ? 'text-red-500' : 'text-gray-800';
+
                 const sensorConfig = currentModel.sensors.find(s => s.id === metricKey) || {};
                 const decimals = typeof getDecimals === 'function' ? getDecimals(sensorConfig.dataType, sensorConfig.step) : 1;
-                
+
                 html += `
                 <tr class="hover:bg-gray-50 transition-colors hist-row">
-                    <td class="px-2 lg:px-6 py-1 text-[11px] lg:text-sm text-gray-500 font-mono text-center">${displayTime}</td>
+                    <td class="px-2 lg:px-6 py-1 text-center hist-time">
+                        <span class="hidden lg:inline text-[11px] lg:text-sm text-gray-500 font-mono">${fullTime}</span>
+                        <div class="lg:hidden text-[11px] text-gray-500 font-mono leading-tight">
+                            <div>${dateStr}</div>
+                            <div>${timeStr}</div>
+                        </div>
+                    </td>
                     <td class="px-2 lg:px-6 py-1 text-center">
                         <span class="text-[11px] lg:text-sm font-bold ${finalColor}">${Number(value).toFixed(decimals)}</span>
                         <span class="text-[10px] lg:text-xs text-gray-400 ml-0.5">${selected.unit}</span>
