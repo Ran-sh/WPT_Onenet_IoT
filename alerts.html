@@ -50,11 +50,11 @@
     <div class="flex-1 flex flex-col h-screen overflow-y-auto w-full relative custom-scrollbar">
 
     <!-- Header -->
-    <header class="bg-white h-16 px-4 lg:px-8 flex items-center justify-between border-b border-gray-200 z-10 relative shadow-sm flex-shrink-0">
-        <div class="flex items-center space-x-4">
+    <header class="bg-white h-12 lg:h-16 px-3 lg:px-8 flex items-center justify-between border-b border-gray-200 z-10 relative shadow-sm flex-shrink-0">
+        <div class="flex items-center space-x-2 lg:space-x-4">
             <h1 class="text-xl font-bold text-gray-800 tracking-tight">报警记录</h1>
         </div>
-        <div class="flex items-center space-x-4">
+        <div class="flex items-center space-x-2 lg:space-x-4">
             <button onclick="markAllAsRead()" class="flex items-center space-x-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors font-medium text-sm">
                 <i class="fas fa-check-double text-xs"></i>
                 <span>一键已读</span>
@@ -63,8 +63,8 @@
                 <i class="fas fa-trash-alt text-xs"></i>
                 <span>清空记录</span>
             </button>
-            <div class="hidden sm:block h-5 w-[1px] bg-gray-300"></div>
-            <div class="hidden sm:flex w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold border border-blue-200">
+            <div class="h-4 w-[1px] bg-gray-300 hidden lg:block"></div>
+            <div class="w-7 h-7 lg:w-9 lg:h-9 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold border border-blue-200">
                 <i class="fas fa-user-shield text-sm"></i>
             </div>
         </div>
