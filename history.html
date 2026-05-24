@@ -12,8 +12,11 @@
     <style>
         body { background-color: #f4f7fb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         .card { background-color: white; border-radius: 1.25rem; box-shadow: 0 4px 10px rgba(0,0,0,0.02); }
-        
-        
+        @media (max-width: 1023px) {
+            .hist-row td { display: block; width: 100% !important; text-align: center !important; padding: 2px 4px !important; }
+            .hist-row td:first-child { padding-top: 6px !important; border-bottom: 1px solid #f3f4f6; }
+            .hist-row td:last-child { padding-bottom: 6px !important; }
+        }
     </style>
 </head>
 <body class="flex h-screen overflow-hidden bg-[#f4f7fb]" style="padding-bottom:env(safe-area-inset-bottom, 0px)">
@@ -384,13 +387,14 @@
                 const decimals = typeof getDecimals === 'function' ? getDecimals(sensorConfig.dataType, sensorConfig.step) : 1;
                 
                 html += `
-                <tr class="hover:bg-gray-50 transition-colors">
-                    <td colspan="3" class="px-2 py-1 text-[11px] lg:text-sm text-gray-500 font-mono text-center border-b border-gray-50">${displayTime}</td>
-                </tr>
-                <tr class="hover:bg-gray-50 transition-colors">
-                    <td colspan="3" class="px-2 pb-2 pt-0 text-center text-[12px] lg:text-sm font-bold ${finalColor}">
-                        ${Number(value).toFixed(decimals)} ${selected.unit}
-                        <span class="ml-2 text-[11px] ${isExceed ? 'text-red-400' : 'text-green-400'}">${isExceed ? '异常' : '正常'}</span>
+                <tr class="hover:bg-gray-50 transition-colors hist-row">
+                    <td class="px-2 lg:px-6 py-1 text-[11px] lg:text-sm text-gray-500 font-mono text-center">${displayTime}</td>
+                    <td class="px-2 lg:px-6 py-1 text-center">
+                        <span class="text-[11px] lg:text-sm font-bold ${finalColor}">${Number(value).toFixed(decimals)}</span>
+                        <span class="text-[10px] lg:text-xs text-gray-400 ml-0.5">${selected.unit}</span>
+                    </td>
+                    <td class="px-2 lg:px-6 py-1 text-center">
+                        <span class="text-[11px] lg:text-sm ${isExceed ? 'text-red-500' : 'text-green-500'}">${isExceed ? '异常' : '正常'}</span>
                     </td>
                 </tr>`;
             }
