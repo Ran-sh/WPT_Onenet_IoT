@@ -7,11 +7,11 @@ const DEFAULT_DATA_MODEL = {
     sensors: [
         { id: 'voltage', name: '电压', icon: 'fa-bolt', color: 'cyan', unit: 'V', cloudKey: 'V', min: 0, max: 50, dataType: 'float', step: 0.01 },
         { id: 'current', name: '电流', icon: 'fa-bolt', color: 'yellow', unit: 'A', cloudKey: 'I', min: 0, max: 10, dataType: 'float', step: 0.01 },
-        { id: 'freq', name: '频率', icon: 'fa-wave-square', color: 'blue', unit: 'kHz', cloudKey: 'F', min: 95, max: 150, dataType: 'int32', step: 1, convert: v => Math.floor(v / 1000) }
+        { id: 'freq', name: '频率', icon: 'fa-wave-square', color: 'blue', unit: 'Hz', cloudKey: 'F', min: 95000, max: 150000, dataType: 'int32', step: 1000 }
     ],
     controls: [
         { id: 'switch', name: '启停控制', icon: 'fa-power-off', color: 'red', cloudKey: 'Switch', dataType: 'bool', step: 1 },
-        { id: 'setfreq', name: '频率设置', icon: 'fa-sliders-h', color: 'blue', unit: 'kHz', cloudKey: 'SetFreq', dataType: 'int32', step: 1, min: 95, max: 150, toCloud: v => v * 1000 }
+        { id: 'setfreq', name: '频率设置', icon: 'fa-sliders-h', color: 'blue', cloudKey: 'SetFreq', dataType: 'int32', step: 1000, min: 95000, max: 150000 }
     ]
 };
 

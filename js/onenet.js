@@ -110,11 +110,7 @@ class OneNetService {
                 const model = typeof getDataModel === 'function' ? getDataModel() : { sensors: [], controls: [] };
                 
                 model.sensors.forEach(s => {
-                    if (rawData[s.cloudKey] !== undefined) {
-                        let val = rawData[s.cloudKey];
-                        if (s.convert) val = s.convert(val);
-                        data[s.id] = val;
-                    }
+                    if (rawData[s.cloudKey] !== undefined) data[s.id] = rawData[s.cloudKey];
                 });
                 model.controls.forEach(c => {
                     if (rawData[c.cloudKey] !== undefined) data[c.id] = rawData[c.cloudKey];
@@ -231,14 +227,11 @@ class OneNetService {
             model.sensors.forEach(s => reverseMap[s.id] = s.cloudKey);
 
             for (const key in params) {
-                let val = params[key];
-                // 应用 toCloud 转换 (例如 kHz → Hz)
-                const ctrl = model.controls.find(c => c.id === key);
-                if (ctrl && ctrl.toCloud) val = ctrl.toCloud(val);
                 if (reverseMap[key]) {
-                    mappedParams[reverseMap[key]] = val;
+                    mappedParams[reverseMap[key]] = params[key];
                 } else {
-                    mappedParams[key] = val;
+                    // Fallback for non-mapped or direct keys
+                    mappedParams[key] = params[key];
                 }
             }
 
