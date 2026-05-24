@@ -411,7 +411,7 @@
                         <span class="text-[10px] lg:text-xs text-gray-400 ml-0.5">${selected.unit}</span>
                     </td>
                     <td class="px-2 lg:px-6 py-1.5 text-center">
-                        <span class="text-[11px] lg:text-sm ${isExceed ? 'text-red-500' : 'text-green-500'}">${isExceed ? '✗' : '✓'}</span>
+                        <span class="inline-flex items-center justify-center w-5 h-5 lg:w-6 lg:h-6 rounded-full text-[10px] lg:text-xs font-bold ${isExceed ? 'bg-red-100 text-red-500' : 'bg-green-100 text-green-500'}">${isExceed ? '✕' : '✓'}</span>
                     </td>
                 </tr>`;
             }
