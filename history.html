@@ -280,8 +280,11 @@
                 let dataArr = displayData.map(item => item.data[s.id] !== undefined ? item.data[s.id] : null);
                 if (dataArr.length === 0) dataArr.push(null);
 
-                const range = s.max - s.min;
-                const buffer = range * 0.2;
+                const vals = dataArr.filter(v => v !== null);
+                const dMin = vals.length ? Math.min(...vals) : s.min;
+                const dMax = vals.length ? Math.max(...vals) : s.max;
+                const dRange = dMax - dMin || 1;
+                const pad = dRange * 0.25;
 
                 metricConfig[s.id] = {
                     label: s.name,
@@ -290,9 +293,9 @@
                     unit: s.unit,
                     borderColor: CHART_COLORS[s.color] || CHART_COLORS['slate'],
                     gradientTop: CHART_BG_COLORS[s.color] || CHART_BG_COLORS['slate'],
-                    min: Math.max(0, s.min - buffer),
-                    max: s.max + buffer,
-                    stepSize: Math.ceil(range / 5) || 1,
+                    min: Math.max(0, dMin - pad),
+                    max: dMax + pad,
+                    stepSize: Math.max(1, Math.ceil(dRange / 5)),
                     thMin: s.min,
                     thMax: s.max
                 };
@@ -480,6 +483,14 @@
                         historyChart.data.labels = labels;
                         historyChart.data.datasets[0].data = selected.data;
                         historyChart.data.datasets[0].pointRadius = labels.length > 50 ? 0 : 3.5;
+                        const yVals = selected.data.filter(v => v !== null);
+                        if (yVals.length) {
+                            const yMin = Math.min(...yVals), yMax = Math.max(...yVals);
+                            const yPad = (yMax - yMin || 1) * 0.25;
+                            historyChart.options.scales.y.min = Math.max(0, yMin - yPad);
+                            historyChart.options.scales.y.max = yMax + yPad;
+                            historyChart.options.scales.y.ticks.stepSize = Math.max(1, Math.ceil((yMax - yMin) / 5));
+                        }
                         historyChart.update('none');
                         
                         renderTable(currentMetric);
