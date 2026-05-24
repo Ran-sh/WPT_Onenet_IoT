@@ -150,9 +150,13 @@
                 let controlUI = '';
                 
                 if (c.dataType === 'int32' || c.dataType === 'float' || c.dataType === 'double') {
+                    const unitHtml = c.unit ? `<span class="text-gray-400 text-xs font-bold ml-1">${c.unit}</span>` : '';
                     controlUI = `
                         <div class="flex items-center space-x-2">
-                            <input type="number" id="input-${c.id}" step="${c.step || 1}" class="w-20 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-gray-800 text-sm text-center focus:outline-none focus:border-blue-500">
+                            <div class="flex items-center">
+                                <input type="number" id="input-${c.id}" step="${c.step || 1}" value="${c.min || 95}" class="w-20 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-gray-800 text-sm text-center focus:outline-none focus:border-blue-500">
+                                ${unitHtml}
+                            </div>
                             <button onclick="handleNumericControl('${c.id}')" class="bg-blue-500 text-white px-3 py-1.5 rounded-lg text-sm font-bold active:bg-blue-600 transition shadow-sm shadow-blue-500/30">下发</button>
                         </div>
                     `;
