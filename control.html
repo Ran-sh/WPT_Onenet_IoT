@@ -152,12 +152,10 @@
                 if (c.dataType === 'int32' || c.dataType === 'float' || c.dataType === 'double') {
                     const unitHtml = c.unit ? `<span class="text-gray-400 text-xs font-bold ml-1">${c.unit}</span>` : '';
                     controlUI = `
-                        <div class="flex items-center space-x-2">
-                            <div class="flex items-center">
-                                <input type="number" id="input-${c.id}" step="${c.step || 1}" value="${c.min || 95}" class="w-20 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-gray-800 text-sm text-center focus:outline-none focus:border-blue-500">
-                                ${unitHtml}
-                            </div>
-                            <button onclick="handleNumericControl('${c.id}')" class="bg-blue-500 text-white px-3 py-1.5 rounded-lg text-sm font-bold active:bg-blue-600 transition shadow-sm shadow-blue-500/30">下发</button>
+                        <div class="flex items-center gap-1 flex-shrink-0">
+                            <input type="number" id="input-${c.id}" step="${c.step || 1}" value="${c.min || 95}" class="w-14 lg:w-20 bg-gray-50 border border-gray-200 rounded-lg px-1.5 lg:px-2 py-1 text-gray-800 text-xs lg:text-sm text-center focus:outline-none focus:border-blue-500">
+                            ${unitHtml}
+                            <button onclick="handleNumericControl('${c.id}')" class="bg-blue-500 text-white px-2 lg:px-3 py-1 rounded-lg text-xs lg:text-sm font-bold active:bg-blue-600 transition shadow-sm shadow-blue-500/30">下发</button>
                         </div>
                     `;
                 } else if (c.dataType === 'string') {
@@ -178,14 +176,12 @@
                 }
 
                 container.innerHTML += `
-                    <div class="bg-white rounded-2xl p-4 flex items-center justify-between border border-gray-200 hover:shadow-lg transition-shadow duration-300">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 ${colors.bg} rounded-xl flex items-center justify-center ${colors.text} border ${colors.border} shadow-sm">
-                                <i class="fas ${c.icon} text-lg"></i>
+                    <div class="bg-white rounded-2xl p-3 lg:p-4 flex items-center justify-between border border-gray-200 hover:shadow-lg transition-shadow duration-300 flex-nowrap">
+                        <div class="flex items-center gap-2 lg:gap-3 flex-shrink-0">
+                            <div class="w-8 h-8 lg:w-10 lg:h-10 ${colors.bg} rounded-xl flex items-center justify-center ${colors.text} border ${colors.border} shadow-sm">
+                                <i class="fas ${c.icon} text-sm lg:text-lg"></i>
                             </div>
-                            <div>
-                                <h2 class="text-base font-bold text-gray-900">${c.name}</h2>
-                            </div>
+                            <h2 class="text-sm lg:text-base font-bold text-gray-900">${c.name}</h2>
                         </div>
                         ${controlUI}
                     </div>
