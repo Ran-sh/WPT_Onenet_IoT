@@ -11,7 +11,7 @@ const DEFAULT_DATA_MODEL = {
     ],
     controls: [
         { id: 'switch', name: '启停控制', icon: 'fa-power-off', color: 'red', cloudKey: 'Switch', dataType: 'bool', step: 1 },
-        { id: 'setfreq', name: '频率设置', icon: 'fa-sliders-h', color: 'blue', unit: 'kHz', cloudKey: 'SetFreq', dataType: 'int32', step: 1, min: 95, max: 150, toCloud: v => FREQ_HZ[FREQ_LIST.indexOf(v)] || (v * 1000), fromCloud: v => Math.floor(v / 1000) }
+        { id: 'setfreq', name: '频率设置', icon: 'fa-sliders-h', color: 'blue', unit: 'kHz', cloudKey: 'SetFreq', dataType: 'int32', step: 1, min: 95, max: 150, toCloud: v => v * 1000, fromCloud: v => Math.floor(v / 1000) }
     ]
 };
 
