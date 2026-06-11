@@ -6,7 +6,7 @@
 const DEFAULT_DATA_MODEL = {
     sensors: [
         { id: 'voltage', name: '电压', icon: 'fa-bolt', color: 'cyan', unit: 'V', cloudKey: 'V', min: 0, max: 50, dataType: 'float', step: 0.01 },
-        { id: 'current', name: '电流', icon: 'fa-bolt', color: 'yellow', unit: 'A', cloudKey: 'I', min: 0, max: 10, dataType: 'float', step: 0.01 },
+        { id: 'current', name: '电流', icon: 'fa-bolt', color: 'yellow', unit: 'A', cloudKey: 'I', min: 0, max: 10, dataType: 'float', step: 0.001 },
         { id: 'freq', name: '频率', icon: 'fa-wave-square', color: 'blue', unit: 'kHz', cloudKey: 'F', min: 95, max: 150, dataType: 'int32', step: 1, fromCloud: v => Math.floor(v / 1000) }
     ],
     controls: [
