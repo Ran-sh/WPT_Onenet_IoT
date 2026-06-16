@@ -10,6 +10,7 @@
     { href: '/monitoring', icon: 'fa-chart-bar', label: '监测' },
     { href: '/control', icon: 'fa-sliders-h', label: '控制' },
     { href: '/history', icon: 'fa-chart-line', label: '历史' },
+    { href: '/alerts', icon: 'fa-bell', label: '报警' },
     { href: '/settings', icon: 'fa-cog', label: '设置' }
   ];
 
@@ -26,5 +27,7 @@
 
   document.body.appendChild(nav);
   const main = document.querySelector('main') || document.querySelector('.flex-1');
-  if (main) main.style.paddingBottom = '64px';
+  if (main) {
+    main.style.paddingBottom = 'calc(64px + env(safe-area-inset-bottom, 0px))';
+  }
 })();

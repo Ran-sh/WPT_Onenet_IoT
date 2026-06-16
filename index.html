@@ -384,7 +384,19 @@
 
         if(checkOneNetConfig() !== false) {
             setTimeout(syncData, 500);
-            setInterval(syncData, 5000);
+            /* 轮询 + 指数退避: 正常间隔 5s, 连续失败时递增到 30s */
+            let _pollFailures = 0;
+            let _pollTimer = null;
+            function _scheduleNextPoll() {
+                const base = 5000;
+                const max = 30000;
+                const delay = Math.min(base * Math.pow(2, _pollFailures), max);
+                _pollTimer = setTimeout(() => {
+                    syncData().then(() => { _pollFailures = 0; }).catch(() => { _pollFailures++; });
+                    _scheduleNextPoll();
+                }, delay);
+            }
+            _scheduleNextPoll();
         }
     </script>
     </div>

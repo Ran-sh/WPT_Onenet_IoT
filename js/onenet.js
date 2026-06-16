@@ -57,7 +57,7 @@ class OneNetService {
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error('Network Response Error:', response.status, errorText);
-                
+
                 // 常见错误处理
                 if (response.status === 401) {
                     throw new Error('鉴权失败(401): 请检查 Token');
@@ -65,6 +65,10 @@ class OneNetService {
                     throw new Error('拒绝访问(403): 检查产品/设备名');
                 } else if (response.status === 404) {
                     throw new Error('服务未找到(404): 检查 BASE_URL');
+                } else if (response.status === 429) {
+                    throw new Error('请求过于频繁(429): 请稍后刷新');
+                } else if (response.status === 503) {
+                    throw new Error('服务暂不可用(503): 服务器维护中');
                 } else if (response.status === 406) {
                     // 专门针对 406 错误，尝试显示 HTML 标题
                     const titleMatch = errorText.match(/<title>(.*?)<\/title>/i);

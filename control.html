@@ -290,10 +290,13 @@
             await sendControlCommand(id, value);
         }
 
+        let _switchPending = false;  /* 防止 Switch 防抖窗口内的重复发送 */
         async function handleControl(id) {
+            if (_switchPending) return;
+            _switchPending = true;
             const checkbox = document.getElementById(`toggle-${id}`);
             const value = checkbox.checked;
-            
+
             checkbox.disabled = true;
             const success = await sendControlCommand(id, value);
             if (!success) {
@@ -301,6 +304,7 @@
             }
             checkbox.disabled = false;
             updateToggleUI(`toggle-${id}`);
+            setTimeout(() => { _switchPending = false; }, 2000);  /* 2s 防抖 */
         }
 
         async function sendControlCommand(id, value) {
