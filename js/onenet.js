@@ -224,65 +224,76 @@ class OneNetService {
      */
     static async setProperty(params) {
         const config = getOneNetConfig();
-        try {
-            // 将内部的属性名转换为用户配置的云端属性名
-            const mappedParams = {};
-            const model = typeof getDataModel === 'function' ? getDataModel() : { sensors: [], controls: [] };
-            
-            // 构建反向映射: appId -> cloudKey
-            const reverseMap = {};
-            model.controls.forEach(c => reverseMap[c.id] = c.cloudKey);
-            model.sensors.forEach(s => reverseMap[s.id] = s.cloudKey);
+        let retries = 3;
+        while (retries > 0) {
+            try {
+                // 将内部的属性名转换为用户配置的云端属性名
+                const mappedParams = {};
+                const model = typeof getDataModel === 'function' ? getDataModel() : { sensors: [], controls: [] };
 
-            for (const key in params) {
-                let val = params[key];
-                const ctrl = model.controls.find(c => c.id === key);
-                if (ctrl && ctrl.toCloud) val = ctrl.toCloud(val);
-                if (reverseMap[key]) {
-                    mappedParams[reverseMap[key]] = val;
-                } else {
-                    mappedParams[key] = val;
-                }
-            }
+                // 构建反向映射: appId -> cloudKey
+                const reverseMap = {};
+                model.controls.forEach(c => reverseMap[c.id] = c.cloudKey);
+                model.sensors.forEach(s => reverseMap[s.id] = s.cloudKey);
 
-            // 新版 OneNet Studio 设置设备属性 API:
-            // POST /thingmodel/set-device-property
-            const response = await fetch(`${config.BASE_URL}/thingmodel/set-device-property`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': config.TOKEN,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    product_id: config.PRODUCT_ID,
-                    device_name: config.DEVICE_NAME,
-                    params: mappedParams
-                })
-            });
-
-            const result = await response.json();
-            
-            if (result.code === 0) {
-                // 指令下发成功，进行乐观 UI 更新
-                const cachedData = JSON.parse(localStorage.getItem('iot_latest_data') || '{}');
-                const controlLocks = JSON.parse(localStorage.getItem('iot_control_locks') || '{}');
-                const now = Date.now();
-                
                 for (const key in params) {
-                    cachedData[key] = params[key];
-                    controlLocks[key] = now; // 记录控制时间，3秒内忽略云端旧状态
+                    let val = params[key];
+                    const ctrl = model.controls.find(c => c.id === key);
+                    if (ctrl && ctrl.toCloud) val = ctrl.toCloud(val);
+                    if (reverseMap[key]) {
+                        mappedParams[reverseMap[key]] = val;
+                    } else {
+                        mappedParams[key] = val;
+                    }
                 }
-                
-                localStorage.setItem('iot_latest_data', JSON.stringify(cachedData));
-                localStorage.setItem('iot_control_locks', JSON.stringify(controlLocks));
-                
-                return true;
+
+                // 新版 OneNet Studio 设置设备属性 API:
+                // POST /thingmodel/set-device-property
+                const response = await fetch(`${config.BASE_URL}/thingmodel/set-device-property`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': config.TOKEN,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        product_id: config.PRODUCT_ID,
+                        device_name: config.DEVICE_NAME,
+                        params: mappedParams
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.code === 0) {
+                    // 指令下发成功，进行乐观 UI 更新
+                    const cachedData = JSON.parse(localStorage.getItem('iot_latest_data') || '{}');
+                    const controlLocks = JSON.parse(localStorage.getItem('iot_control_locks') || '{}');
+                    const now = Date.now();
+
+                    for (const key in params) {
+                        cachedData[key] = params[key];
+                        controlLocks[key] = now; // 记录控制时间，3秒内忽略云端旧状态
+                    }
+
+                    localStorage.setItem('iot_latest_data', JSON.stringify(cachedData));
+                    localStorage.setItem('iot_control_locks', JSON.stringify(controlLocks));
+
+                    return true;
+                }
+                /* OneNET 业务错误 → 递减重试 */
+                retries--;
+                if (retries > 0) {
+                    await new Promise(r => setTimeout(r, 500));
+                }
+            } catch (error) {
+                console.error('OneNet Studio Property Set Error (retries left: ' + retries + '):', error);
+                retries--;
+                if (retries > 0) {
+                    await new Promise(r => setTimeout(r, 800));
+                }
             }
-            return false;
-        } catch (error) {
-            console.error('OneNet Studio Property Set Error:', error);
-            return false;
         }
+        return false;
     }
 }
 

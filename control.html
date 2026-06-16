@@ -420,15 +420,15 @@
                     console.error('Parse cache error:', e);
                 }
             }
-            
+
             setTimeout(syncStatus, 500);
-            setInterval(syncStatus, 60000);
+            setInterval(syncStatus, 5000);   /* 5s 同步, 与首页刷新率一致 */
             console.log('[Control] sync started');
         };
         // 兜底: 如果 onload 已过, 直接启动
         if (document.readyState === 'complete') {
             setTimeout(syncStatus, 500);
-            setInterval(syncStatus, 60000);
+            setInterval(syncStatus, 5000);
             console.log('[Control] sync started (fallback)');
         }
     </script>
