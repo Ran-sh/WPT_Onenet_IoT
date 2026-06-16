@@ -167,19 +167,25 @@ class OneNetService {
             
             // 解析设备在线状态
             let isOnline = false;
+
+            /* 优先: 如果成功拿到了实时数据且非空, 直接判定为在线
+             *  不再依赖独立的 /device/detail API (该接口经常跨域/权限不足/失败)
+             */
+            if (result.data && result.data.length > 0) {
+                isOnline = true;
+            }
+
+            /* 补充: 如果 status API 也成功了, 以它为准 (覆盖上面数据兜底判断) */
             if (statusResponse && statusResponse.ok) {
                 try {
                     const statusResult = await statusResponse.json();
                     if (statusResult.code === 0 && statusResult.data) {
-                        // OneNet Studio API 中：status 字段表示设备状态（通常 1 表示在线，0 表示离线/未激活）
-                        isOnline = statusResult.data.status == 1 || statusResult.data.status === '在线' || statusResult.data.status == 2;
+                        const st = statusResult.data.status;
+                        isOnline = (st == 1 || st == 2 || st === '在线');
                     }
-                } catch (e) { /* status JSON 解析失败, 保持 false */ }
+                } catch (e) { /* status JSON 解析失败, 保持数据兜底值 */ }
             }
-            /* 兜底: 如果 status API 失败但成功拿到了实时数据, 判定为在线 */
-            if (!isOnline && result.data && result.data.length > 0) {
-                isOnline = true;
-            }
+
             data._isOnline = isOnline;
 
             return data;
