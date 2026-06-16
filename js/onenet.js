@@ -48,7 +48,7 @@ class OneNetService {
 
             // 同时获取设备在线状态
             const statusUrl = `${config.BASE_URL}/device/detail?product_id=${config.PRODUCT_ID}&device_name=${config.DEVICE_NAME}`;
-            
+
             const [response, statusResponse] = await Promise.all([
                 fetch(url, { method: 'GET', headers: { 'Authorization': config.TOKEN } }),
                 fetch(statusUrl, { method: 'GET', headers: { 'Authorization': config.TOKEN } }).catch(e => null)
@@ -168,11 +168,17 @@ class OneNetService {
             // 解析设备在线状态
             let isOnline = false;
             if (statusResponse && statusResponse.ok) {
-                const statusResult = await statusResponse.json();
-                if (statusResult.code === 0 && statusResult.data) {
-                    // OneNet Studio API 中：status 字段表示设备状态（通常 1 表示在线，0 表示离线/未激活）
-                    isOnline = statusResult.data.status == 1 || statusResult.data.status === '在线' || statusResult.data.status == 2;
-                }
+                try {
+                    const statusResult = await statusResponse.json();
+                    if (statusResult.code === 0 && statusResult.data) {
+                        // OneNet Studio API 中：status 字段表示设备状态（通常 1 表示在线，0 表示离线/未激活）
+                        isOnline = statusResult.data.status == 1 || statusResult.data.status === '在线' || statusResult.data.status == 2;
+                    }
+                } catch (e) { /* status JSON 解析失败, 保持 false */ }
+            }
+            /* 兜底: 如果 status API 失败但成功拿到了实时数据, 判定为在线 */
+            if (!isOnline && result.data && result.data.length > 0) {
+                isOnline = true;
             }
             data._isOnline = isOnline;
 
@@ -225,6 +231,9 @@ class OneNetService {
     static async setProperty(params) {
         const config = getOneNetConfig();
         let retries = 3;
+        /* 不可恢复错误: 401/403 重试无意义, 立即返回失败 */
+        const UNRECOVERABLE = [401, 403];
+
         while (retries > 0) {
             try {
                 // 将内部的属性名转换为用户配置的云端属性名
@@ -261,6 +270,11 @@ class OneNetService {
                         params: mappedParams
                     })
                 });
+
+                if (UNRECOVERABLE.includes(response.status)) {
+                    console.error('OneNet Studio unrecoverable HTTP', response.status);
+                    return false;
+                }
 
                 const result = await response.json();
 

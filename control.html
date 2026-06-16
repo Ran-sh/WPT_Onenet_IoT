@@ -385,15 +385,26 @@
             if (icon) setTimeout(() => icon.classList.remove('fa-spin'), 800);
         }
 
-        window.onload = () => {
+        /* 使用 'load' 事件 + 去重标志, 防止 onload+fallback 重复注册两次 setInterval */
+        let _controlSyncStarted = false;
+        function _startControlSync() {
+            if (_controlSyncStarted) return;
+            _controlSyncStarted = true;
+            setTimeout(syncStatus, 500);
+            setInterval(syncStatus, 5000);   /* 5s 同步, 与首页刷新率一致 */
+            console.log('[Control] sync started');
+        }
+        window.addEventListener('load', _startControlSync);
+        /* 初始化: 渲染 UI + 填充缓存 + 启动同步 */
+        {
             initUI();
             renderLogs();
-            
+
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'visible') {
                     const newModelStr = localStorage.getItem('iot_data_model');
                     if (newModelStr && JSON.stringify(currentModel) !== newModelStr) {
-                        window.location.reload(); // Quick clean refresh of the dynamically generated DOM
+                        window.location.reload();
                     }
                 }
             });
@@ -420,16 +431,9 @@
                     console.error('Parse cache error:', e);
                 }
             }
-
-            setTimeout(syncStatus, 500);
-            setInterval(syncStatus, 5000);   /* 5s 同步, 与首页刷新率一致 */
-            console.log('[Control] sync started');
-        };
-        // 兜底: 如果 onload 已过, 直接启动
-        if (document.readyState === 'complete') {
-            setTimeout(syncStatus, 500);
-            setInterval(syncStatus, 5000);
-            console.log('[Control] sync started (fallback)');
+        }
+        if (document.readyState === 'complete' && !_controlSyncStarted) {
+            _startControlSync();
         }
     </script>
     </div>
