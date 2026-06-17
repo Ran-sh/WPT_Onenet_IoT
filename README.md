@@ -258,7 +258,7 @@ Token 格式: `version=2018-10-31&res=products%2F{产品ID}%2Fdevices%2F{设备�
 |:---|:---|:---|
 | 所有卡片显示 `--` | 未配置 OneNET 凭证 | 进设置页填写产品 ID / 设备名 / Token |
 | 设置页改了但仪表盘没变 | 页面缓存 | 切换页面或刷新, 仪表盘监听 `visibilitychange` |
-| 下发指令无效 | ESP8266 固件版本旧 | V5.1 修复了 SetFreq/Switch 遥测覆盖问题 |
+| 下发指令无效 | ESP8266 固件版本旧 | V4.3.0 修复了 SetFreq/Switch 遥测覆盖问题 |
 | 历史图表为空 | 数据量不足 | 至少等 1 分钟 (每分钟采样 1 条) |
 | PWA 安装无效 | 浏览器不支持 | Chrome/Edge iOS 不支持 PWA 安装, 用 Safari "添加到主屏幕" |
 | `net::ERR_FAILED` | CORS 被浏览器拦截 | OneNET API 不应有 CORS 问题, 检查 Token 是否正确 |
