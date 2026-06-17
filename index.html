@@ -10,7 +10,7 @@
     <script src="js/onenet.js"></script>
     <style>
         body { background-color: #f4f7fb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        .card { background-color: white; border-radius: 1.25rem; box-shadow: 0 4px 10px rgba(0,0,0,0.02); }
+        .card { background-color: white; border-radius: 1.25rem; box-shadow: 0 4px 10px rgba(0,0,0,0.02); }}
         
         
     </style>
@@ -299,15 +299,15 @@
                 if (data[c.id] !== undefined) {
                     const statusEl = document.getElementById(`control-status-${c.id}`);
                     if (statusEl) {
-                        if (c.dataType === 'int32' || c.dataType === 'float' || c.dataType === 'double' || c.dataType === 'string') {
+                        if (c.dataType === 'bool') {
+                            const isOn = !!data[c.id];
+                            statusEl.innerText = isOn ? '开启' : '关闭';
+                            const colors = COLOR_CLASSES[c.color] || COLOR_CLASSES['slate'];
+                            statusEl.className = `text-xs font-bold px-3 py-1 rounded-full tracking-wide border mr-3 ${isOn ? `${colors.text} ${colors.bg} ${colors.border}` : 'text-gray-500 bg-gray-50 border-gray-200/50'}`;
+                        } else {
                             statusEl.innerText = String(data[c.id]);
                             const colors = COLOR_CLASSES[c.color] || COLOR_CLASSES['slate'];
                             statusEl.className = `text-xs font-bold px-3 py-1 rounded-full tracking-wide border mr-3 ${colors.text} ${colors.bg} ${colors.border}`;
-                        } else {
-                            const isOn = !!data[c.id];
-                            statusEl.innerText = isOn ? '已开启' : '已关闭';
-                            const colors = COLOR_CLASSES[c.color] || COLOR_CLASSES['slate'];
-                            statusEl.className = `text-xs font-bold px-3 py-1 rounded-full tracking-wide border mr-3 ${isOn ? `${colors.text} ${colors.bg} ${colors.border}` : 'text-gray-500 bg-gray-50 border-gray-200/50'}`;
                         }
                     }
                 }
@@ -339,7 +339,7 @@
 
         const cachedData = localStorage.getItem('iot_latest_data');
         if (cachedData) {
-            try { updateUI(JSON.parse(cachedData), true); } 
+            try { updateUI(JSON.parse(cachedData), true); }
             catch (e) { console.error(e); }
         }
 
