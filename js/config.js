@@ -4,6 +4,7 @@
  */
 
 const DEFAULT_DATA_MODEL = {
+    _version: 2,
     sensors: [
         { id: 'voltage', name: '电压', icon: 'fa-bolt', color: 'cyan', unit: 'V', cloudKey: 'V', min: 0, max: 50, dataType: 'float', step: 0.01 },
         { id: 'current', name: '电流', icon: 'fa-bolt', color: 'yellow', unit: 'A', cloudKey: 'I', min: 0, max: 10, dataType: 'float', step: 0.001 },
@@ -11,6 +12,7 @@ const DEFAULT_DATA_MODEL = {
     ],
     controls: [
         { id: 'switch', name: '启停控制', icon: 'fa-power-off', color: 'red', cloudKey: 'Switch', dataType: 'bool', step: 1 },
+        { id: 'Switch_WIFI', name: 'WiFi开关', icon: 'fa-wifi', color: 'green', cloudKey: 'Switch_WIFI', dataType: 'bool', step: 1 },
         { id: 'setfreq', name: '频率设置', icon: 'fa-sliders-h', color: 'blue', unit: 'kHz', cloudKey: 'SetFreq', dataType: 'int32', step: 1, min: 95, max: 150, toCloud: v => v * 1000, fromCloud: v => Math.floor(v / 1000) }
     ]
 };
@@ -29,7 +31,13 @@ function getDataModel() {
     try {
         const saved = localStorage.getItem('iot_data_model');
         if (saved) {
-            return JSON.parse(saved);
+            const model = JSON.parse(saved);
+            /* 版本更新时自动刷新: saved 模型缺少 _version 或版本号落后的, 返回最新默认模型 */
+            if (!model._version || model._version < DEFAULT_DATA_MODEL._version) {
+                localStorage.removeItem('iot_data_model');
+                return DEFAULT_DATA_MODEL;
+            }
+            return model;
         }
     } catch (e) {
         console.error('Error loading data model:', e);
