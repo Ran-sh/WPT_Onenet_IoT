@@ -168,7 +168,7 @@
         const cachedData = localStorage.getItem('iot_latest_data');
         if (cachedData) {
             try { updateCards(JSON.parse(cachedData)); } 
-            catch (e) { console.error(e); }
+            catch (e) {}
         }
 
         // 同步 OneNet 数据
@@ -185,7 +185,6 @@
                     }
                 }
             } catch (error) {
-                console.error('Sync failed:', error);
             } finally {
                 if (isManual && refreshIcon) {
                     setTimeout(() => refreshIcon.classList.remove('fa-spin'), 500);
@@ -374,7 +373,8 @@
         }
 
         setTimeout(syncData, 500);
-        setInterval(syncData, 10000);
+        var _monitorPolling = false;
+        setInterval(function() { if (_monitorPolling) return; _monitorPolling = true; syncData().finally(function() { _monitorPolling = false; }); }, 10000);
     </script>
     </div>
 

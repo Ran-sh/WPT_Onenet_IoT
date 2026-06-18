@@ -32,8 +32,6 @@ function getDataModel() {
             return JSON.parse(saved);
         }
     } catch (e) {
-        console.error('Error loading data model:', e);
-    }
     return DEFAULT_DATA_MODEL;
 }
 

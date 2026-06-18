@@ -438,8 +438,9 @@
                 }
             }
             
-            const now = new Date();
-            document.getElementById('loginTime').innerText = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+            var now = new Date();
+            var ltEl = document.getElementById('loginTime');
+            if (ltEl) ltEl.innerText = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
         }
 
         function saveDashboardTitle() {

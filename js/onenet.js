@@ -3,10 +3,14 @@
  * 用于与 OneNet 云平台进行数据同步
  */
 
-// 动态获取 OneNet 配置，如果未设置则使用默认的回退配置
+/* 安全: 无 console 输出, 无 token 泄露 */
+function safeJSONParse(str, fallback) {
+    try { return JSON.parse(str); } catch (e) { return fallback; }
+}
+
+/* 动态获取 OneNet 配置 */
 function getOneNetConfig() {
-    const userConfig = JSON.parse(localStorage.getItem('iot_onenet_config') || 'null');
-    
+    var userConfig = safeJSONParse(localStorage.getItem('iot_onenet_config'), null);
     if (userConfig && userConfig.productId && userConfig.deviceName && userConfig.token) {
         return {
             PRODUCT_ID: userConfig.productId,
@@ -15,313 +19,170 @@ function getOneNetConfig() {
             BASE_URL: 'https://iot-api.heclouds.com'
         };
     }
-    // 返回空配置以触发拦截
-    return {
-        PRODUCT_ID: '', 
-        DEVICE_NAME: '', 
-        TOKEN: 'YOUR_TOKEN', 
-        BASE_URL: 'https://iot-api.heclouds.com'
-    };
+    return { PRODUCT_ID: '', DEVICE_NAME: '', TOKEN: '', BASE_URL: 'https://iot-api.heclouds.com' };
 }
 
 class OneNetService {
-    /**
-     * 获取设备最新属性值 (物模型)
-     * @returns {Promise<Object>} 返回处理后的数据对象
-     */
     static async getLatestData() {
-        const config = getOneNetConfig();
+        var config = getOneNetConfig();
         try {
-            // 如果配置未填写，提示用户
-            if (config.TOKEN.includes('YOUR_')) {
-                console.warn('OneNet Token is not configured. Using mock data for UI preview.');
-                return this.getMockData();
-            }
+            if (!config.TOKEN) return this.getMockData();
 
-            console.log('Fetching OneNet data for:', config.DEVICE_NAME);
-            
-            const url = `${config.BASE_URL}/thingmodel/query-device-property?product_id=${config.PRODUCT_ID}&device_name=${config.DEVICE_NAME}`;
-            
-            // 调试用：记录请求信息
-            console.log('OneNet Request URL:', url);
-            console.log('OneNet Authorization:', config.TOKEN);
+            var url = config.BASE_URL + '/thingmodel/query-device-property?product_id=' + config.PRODUCT_ID + '&device_name=' + config.DEVICE_NAME;
+            var statusUrl = config.BASE_URL + '/device/detail?product_id=' + config.PRODUCT_ID + '&device_name=' + config.DEVICE_NAME;
 
-            // 同时获取设备在线状态
-            const statusUrl = `${config.BASE_URL}/device/detail?product_id=${config.PRODUCT_ID}&device_name=${config.DEVICE_NAME}`;
-
-            const [response, statusResponse] = await Promise.all([
+            var results = await Promise.all([
                 fetch(url, { method: 'GET', headers: { 'Authorization': config.TOKEN } }),
-                fetch(statusUrl, { method: 'GET', headers: { 'Authorization': config.TOKEN } }).catch(e => null)
+                fetch(statusUrl, { method: 'GET', headers: { 'Authorization': config.TOKEN } }).catch(function() { return null; })
             ]);
+            var response = results[0], statusResponse = results[1];
 
             if (!response.ok) {
-                const errorText = await response.text();
-                console.error('Network Response Error:', response.status, errorText);
-
-                // 常见错误处理
-                if (response.status === 401) {
-                    throw new Error('鉴权失败(401): 请检查 Token');
-                } else if (response.status === 403) {
-                    throw new Error('拒绝访问(403): 检查产品/设备名');
-                } else if (response.status === 404) {
-                    throw new Error('服务未找到(404): 检查 BASE_URL');
-                } else if (response.status === 429) {
-                    throw new Error('请求过于频繁(429): 请稍后刷新');
-                } else if (response.status === 503) {
-                    throw new Error('服务暂不可用(503): 服务器维护中');
-                } else if (response.status === 406) {
-                    // 专门针对 406 错误，尝试显示 HTML 标题
-                    const titleMatch = errorText.match(/<title>(.*?)<\/title>/i);
-                    const title = titleMatch ? titleMatch[1] : '服务器拒绝请求(406)';
-                    throw new Error(`连接失败: ${title}`);
+                var errorText = '';
+                try { errorText = await response.text(); } catch (e) {}
+                if (response.status === 401) throw new Error('鉴权失败(401): 请检查 Token');
+                if (response.status === 403) throw new Error('拒绝访问(403): 检查产品/设备名');
+                if (response.status === 404) throw new Error('服务未找到(404): 检查 BASE_URL');
+                if (response.status === 429) throw new Error('请求过于频繁(429): 请稍后刷新');
+                if (response.status === 503) throw new Error('服务暂不可用(503): 服务器维护中');
+                if (response.status === 406) {
+                    var titleMatch = errorText.match(/<title>(.*?)<\/title>/i);
+                    throw new Error('连接失败: ' + (titleMatch ? titleMatch[1] : '服务器拒绝请求(406)'));
                 }
-                throw new Error(`HTTP Error: ${response.status}`);
+                throw new Error('HTTP Error: ' + response.status);
             }
-            
-            const result = await response.json();
-            console.log('OneNet Raw Response:', result);
+
+            var result = await response.json();
 
             if (result.code !== 0) {
-                console.error('OneNet API Error:', result.code, result.msg);
-                
-                // OneNet 业务错误码处理
-                if (result.code === 401 || result.msg.toLowerCase().includes('token')) {
+                if (result.code === 401 || (result.msg || '').toLowerCase().indexOf('token') !== -1)
                     throw new Error('Token 过期或格式错误');
-                } else if (result.msg.includes('device not found')) {
+                if ((result.msg || '').indexOf('device not found') !== -1)
                     throw new Error('找不到该设备');
-                }
-                throw new Error(`API错误(${result.code}): ${result.msg}`);
+                throw new Error('API错误(' + result.code + '): ' + result.msg);
             }
 
-            const data = {};
+            var data = {};
             if (result.data && Array.isArray(result.data)) {
-                // 1. 将 OneNet 原始数据转换为键值对
-                const rawData = {};
-                result.data.forEach(item => {
-                    let val = item.value;
-                    // OneNet 返回的值可能全是字符串，这里做自动类型转换
-                    if (val === 'true') {
-                        val = true;
-                    } else if (val === 'false') {
-                        val = false;
-                    } else if (!isNaN(val) && val !== '') {
-                        val = Number(val);
-                    }
+                var rawData = {};
+                result.data.forEach(function(item) {
+                    var val = item.value;
+                    if (val === 'true') val = true;
+                    else if (val === 'false') val = false;
+                    else if (!isNaN(val) && val !== '') val = Number(val);
                     rawData[item.identifier] = val;
                 });
-                
-                // 2. 根据用户的动态数据模型配置，将数据转化为前端标准标识符
-                const model = typeof getDataModel === 'function' ? getDataModel() : { sensors: [], controls: [] };
-                
-                model.sensors.forEach(s => {
-                    if (rawData[s.cloudKey] !== undefined) {
-                        let v = rawData[s.cloudKey];
-                        if (s.fromCloud) v = s.fromCloud(v);
-                        data[s.id] = v;
-                    }
-                });
-                model.controls.forEach(c => {
-                    if (rawData[c.cloudKey] !== undefined) {
-                        let v = rawData[c.cloudKey];
-                        if (c.fromCloud) v = c.fromCloud(v);
-                        data[c.id] = v;
-                    }
-                });
-                
-                // 将最新数据缓存到 localStorage，避免页面切换时的闪烁和预设值问题
-                // 合并现有缓存，保留可能存在的乐观更新状态
-                const cachedData = JSON.parse(localStorage.getItem('iot_latest_data') || '{}');
-                const controlLocks = JSON.parse(localStorage.getItem('iot_control_locks') || '{}');
-                const now = Date.now();
-                
-                for (const key in data) {
-                    // 如果该属性在最近 3 秒内被下发过控制指令，则忽略云端的旧状态（乐观更新锁）
-                    if (controlLocks[key] && (now - controlLocks[key] < 3000)) {
-                        data[key] = cachedData[key]; // 保持缓存中的乐观状态
-                    }
+
+                var model = typeof getDataModel === 'function' ? getDataModel() : { sensors: [], controls: [] };
+                model.sensors.forEach(function(s) { if (rawData[s.cloudKey] !== undefined) { var v = rawData[s.cloudKey]; if (s.fromCloud) v = s.fromCloud(v); data[s.id] = v; } });
+                model.controls.forEach(function(c) { if (rawData[c.cloudKey] !== undefined) { var v = rawData[c.cloudKey]; if (c.fromCloud) v = c.fromCloud(v); data[c.id] = v; } });
+
+                /* 乐观锁: 3s 内下发过的属性不覆盖 */
+                var cachedData = safeJSONParse(localStorage.getItem('iot_latest_data'), {});
+                var controlLocks = safeJSONParse(localStorage.getItem('iot_control_locks'), {});
+                var now = Date.now();
+                for (var key in data) {
+                    if (data.hasOwnProperty(key) && controlLocks[key] && (now - controlLocks[key] < 3000))
+                        data[key] = cachedData[key];
                 }
-                
-                const newData = { ...cachedData, ...data };
+                var newData = {};
+                for (var k in cachedData) { if (cachedData.hasOwnProperty(k)) newData[k] = cachedData[k]; }
+                for (var k2 in data) { if (data.hasOwnProperty(k2)) newData[k2] = data[k2]; }
                 localStorage.setItem('iot_latest_data', JSON.stringify(newData));
 
-                // 保存历史数据用于图表展示
-                let historyData = JSON.parse(localStorage.getItem('iot_history_data') || '[]');
-                const timeStr = `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')}`;
-                const fullTimeStr = `${new Date().getFullYear()}-${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${new Date().getDate().toString().padStart(2, '0')} ${timeStr}:${new Date().getSeconds().toString().padStart(2, '0')}`;
-                
-                // 每分钟最多保存一条记录
+                /* 历史记录: 每分钟一条, 最多 1440 */
+                var historyData = safeJSONParse(localStorage.getItem('iot_history_data'), []);
+                var d = new Date();
+                var timeStr = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+                var fullTimeStr = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2) + ' ' + timeStr + ':' + ('0' + d.getSeconds()).slice(-2);
                 if (historyData.length === 0 || historyData[historyData.length - 1].time !== timeStr) {
-                    historyData.push({
-                        time: timeStr,
-                        fullTime: fullTimeStr,
-                        timestamp: Date.now(), // 存储精确时间戳方便查询
-                        data: { ...data }
-                    });
-                    
-                    // 限制历史记录最多保留 1440 条 (24小时 * 60分钟)
-                    if (historyData.length > 1440) {
-                        historyData.shift();
-                    }
+                    historyData.push({ time: timeStr, fullTime: fullTimeStr, timestamp: Date.now(), data: {} });
+                    var last = historyData[historyData.length - 1].data;
+                    for (var dk in data) { if (data.hasOwnProperty(dk)) last[dk] = data[dk]; }
+                    if (historyData.length > 1440) historyData.shift();
                     localStorage.setItem('iot_history_data', JSON.stringify(historyData));
                 }
-                
-            } else {
-                console.warn('OneNet: 成功获取数据但列表为空，可能设备未上报属性');
-            }
-            
-            // 解析设备在线状态
-            let isOnline = false;
-
-            /* 优先: 如果成功拿到了实时数据且非空, 直接判定为在线
-             *  不再依赖独立的 /device/detail API (该接口经常跨域/权限不足/失败)
-             */
-            if (result.data && result.data.length > 0) {
-                isOnline = true;
             }
 
-            /* 补充: 如果 status API 也成功了, 以它为准 (覆盖上面数据兜底判断) */
+            var isOnline = (result.data && result.data.length > 0);
             if (statusResponse && statusResponse.ok) {
                 try {
-                    const statusResult = await statusResponse.json();
+                    var statusResult = await statusResponse.json();
                     if (statusResult.code === 0 && statusResult.data) {
-                        const st = statusResult.data.status;
+                        var st = statusResult.data.status;
                         isOnline = (st == 1 || st == 2 || st === '在线');
                     }
-                } catch (e) { /* status JSON 解析失败, 保持数据兜底值 */ }
+                } catch (e) {}
             }
-
             data._isOnline = isOnline;
-
             return data;
         } catch (error) {
-            console.error('OneNet Fetch Catch:', error.message);
-            
-            // 如果是因为跨域导致无法获取 error 信息
-            if (error.message === 'Failed to fetch') {
+            if (error.message === 'Failed to fetch')
                 throw new Error('网络请求被拦截(请重启APP生效)');
-            }
-            
-            throw error; // 继续向外抛出，让 UI 捕获并显示
+            throw error;
         }
     }
 
-    /**
-     * 提供模拟数据供开发预览 (当云端未连接时)
-     */
     static getMockData() {
-        const mockData = { _isMock: true };
-        const model = typeof getDataModel === 'function' ? getDataModel() : { sensors: [], controls: [] };
-        
-        model.sensors.forEach(s => {
-            const range = s.max - s.min;
-            const mid = s.min + range / 2;
-            const rawVal = mid + (Math.random() * (range * 0.2) - (range * 0.1));
-            const decimals = typeof getDecimals === 'function' ? getDecimals(s.dataType, s.step) : 1;
+        var mockData = { _isMock: true };
+        var model = typeof getDataModel === 'function' ? getDataModel() : { sensors: [], controls: [] };
+        model.sensors.forEach(function(s) {
+            var range = s.max - s.min, mid = s.min + range / 2;
+            var rawVal = mid + (Math.random() * (range * 0.2) - (range * 0.1));
+            var decimals = typeof getDecimals === 'function' ? getDecimals(s.dataType, s.step) : 1;
             mockData[s.id] = Number(rawVal.toFixed(decimals));
         });
-        model.controls.forEach(c => {
-            if (c.dataType === 'int32') {
-                mockData[c.id] = Math.floor(Math.random() * 100);
-            } else if (c.dataType === 'float' || c.dataType === 'double') {
-                const decimals = typeof getDecimals === 'function' ? getDecimals(c.dataType, c.step) : 2;
-                mockData[c.id] = Number((Math.random() * 100).toFixed(decimals));
-            } else if (c.dataType === 'string') {
-                mockData[c.id] = "mock_str";
-            } else {
-                mockData[c.id] = Math.random() > 0.5;
-            }
+        model.controls.forEach(function(c) {
+            if (c.dataType === 'int32') mockData[c.id] = Math.floor(Math.random() * 100);
+            else if (c.dataType === 'bool') mockData[c.id] = Math.random() > 0.5;
+            else mockData[c.id] = Number((Math.random() * 100).toFixed(2));
         });
         return mockData;
     }
 
-    /**
-     * 向设备下发属性设置 (物模型控制)
-     * @param {Object} params 属性键值对，例如 {"valve": true}
-     */
     static async setProperty(params) {
-        const config = getOneNetConfig();
-        let retries = 3;
-        /* 不可恢复错误: 401/403 重试无意义, 立即返回失败 */
-        const UNRECOVERABLE = [401, 403];
+        var config = getOneNetConfig();
+        var retries = 3;
+        var UNRECOVERABLE = [401, 403];
+        var model = typeof getDataModel === 'function' ? getDataModel() : { sensors: [], controls: [] };
+        var reverseMap = {};
+        model.controls.forEach(function(c) { reverseMap[c.id] = c.cloudKey; });
+        model.sensors.forEach(function(s) { reverseMap[s.id] = s.cloudKey; });
+        var mappedParams = {};
+        for (var key in params) {
+            if (!params.hasOwnProperty(key)) continue;
+            var val = params[key];
+            for (var j = 0; j < model.controls.length; j++) {
+                if (model.controls[j].id === key && model.controls[j].toCloud) { val = model.controls[j].toCloud(val); break; }
+            }
+            mappedParams[reverseMap[key] || key] = val;
+        }
 
         while (retries > 0) {
             try {
-                // 将内部的属性名转换为用户配置的云端属性名
-                const mappedParams = {};
-                const model = typeof getDataModel === 'function' ? getDataModel() : { sensors: [], controls: [] };
-
-                // 构建反向映射: appId -> cloudKey
-                const reverseMap = {};
-                model.controls.forEach(c => reverseMap[c.id] = c.cloudKey);
-                model.sensors.forEach(s => reverseMap[s.id] = s.cloudKey);
-
-                for (const key in params) {
-                    let val = params[key];
-                    const ctrl = model.controls.find(c => c.id === key);
-                    if (ctrl && ctrl.toCloud) val = ctrl.toCloud(val);
-                    if (reverseMap[key]) {
-                        mappedParams[reverseMap[key]] = val;
-                    } else {
-                        mappedParams[key] = val;
-                    }
-                }
-
-                // 新版 OneNet Studio 设置设备属性 API:
-                // POST /thingmodel/set-device-property
-                const response = await fetch(`${config.BASE_URL}/thingmodel/set-device-property`, {
+                var response = await fetch(config.BASE_URL + '/thingmodel/set-device-property', {
                     method: 'POST',
-                    headers: {
-                        'Authorization': config.TOKEN,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        product_id: config.PRODUCT_ID,
-                        device_name: config.DEVICE_NAME,
-                        params: mappedParams
-                    })
+                    headers: { 'Authorization': config.TOKEN, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ product_id: config.PRODUCT_ID, device_name: config.DEVICE_NAME, params: mappedParams })
                 });
-
-                if (UNRECOVERABLE.includes(response.status)) {
-                    console.error('OneNet Studio unrecoverable HTTP', response.status);
-                    return false;
-                }
-
-                const result = await response.json();
-
+                if (UNRECOVERABLE.indexOf(response.status) !== -1) return false;
+                var result = await response.json();
                 if (result.code === 0) {
-                    // 指令下发成功，进行乐观 UI 更新
-                    const cachedData = JSON.parse(localStorage.getItem('iot_latest_data') || '{}');
-                    const controlLocks = JSON.parse(localStorage.getItem('iot_control_locks') || '{}');
-                    const now = Date.now();
-
-                    for (const key in params) {
-                        cachedData[key] = params[key];
-                        controlLocks[key] = now; // 记录控制时间，3秒内忽略云端旧状态
-                    }
-
+                    var cachedData = safeJSONParse(localStorage.getItem('iot_latest_data'), {});
+                    var controlLocks = safeJSONParse(localStorage.getItem('iot_control_locks'), {});
+                    var now = Date.now();
+                    for (var k in params) { if (params.hasOwnProperty(k)) { cachedData[k] = params[k]; controlLocks[k] = now; } }
                     localStorage.setItem('iot_latest_data', JSON.stringify(cachedData));
                     localStorage.setItem('iot_control_locks', JSON.stringify(controlLocks));
-
                     return true;
                 }
-                /* OneNET 业务错误 → 递减重试 */
                 retries--;
-                if (retries > 0) {
-                    await new Promise(r => setTimeout(r, 500));
-                }
-            } catch (error) {
-                console.error('OneNet Studio Property Set Error (retries left: ' + retries + '):', error);
+                if (retries > 0) await new Promise(function(r) { setTimeout(r, 500); });
+            } catch (e) {
                 retries--;
-                if (retries > 0) {
-                    await new Promise(r => setTimeout(r, 800));
-                }
+                if (retries > 0) await new Promise(function(r) { setTimeout(r, 800); });
             }
         }
         return false;
     }
 }
-
-// 导出配置和类 (如果环境支持 ES6 模块)
-// if (typeof module !== 'undefined') {
-//     module.exports = { ONENET_CONFIG, OneNetService };
-// }

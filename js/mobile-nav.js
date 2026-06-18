@@ -14,16 +14,14 @@
     { href: '/settings', icon: 'fa-cog', label: '设置' }
   ];
 
-  let path = window.location.pathname.replace(/\.html$/, '').replace(/\/$/, '') || '/';
-  items.forEach(item => {
-    const isActive = (path === item.href || (item.href !== '/' && path.startsWith(item.href)));
-    nav.innerHTML += `
-      <a href="${item.href}" class="flex flex-col items-center px-2 py-1 no-underline" style="color:${isActive ? '#3b82f6' : '#9ca3af'}">
-        <i class="fas ${item.icon}" style="font-size:20px"></i>
-        <span style="font-size:10px;margin-top:2px;font-weight:500">${item.label}</span>
-      </a>
-    `;
+  var path = window.location.pathname.replace(/\.html$/, '').replace(/\/$/, '') || '/';
+
+  var navHtml = '';
+  items.forEach(function(item) {
+    var isActive = (path === item.href || (item.href !== '/' && path.indexOf(item.href) === 0));
+    navHtml += '<a href="' + item.href + '" class="flex flex-col items-center px-2 py-1 no-underline" style="color:' + (isActive ? '#3b82f6' : '#9ca3af') + '"><i class="fas ' + item.icon + '" style="font-size:20px"></i><span style="font-size:10px;margin-top:2px;font-weight:500">' + item.label + '</span></a>';
   });
+  nav.innerHTML = navHtml;
 
   document.body.appendChild(nav);
   const main = document.querySelector('main') || document.querySelector('.flex-1');

@@ -205,7 +205,6 @@
                     }
                 }
             } catch (error) {
-                console.error('Sync failed:', error);
                 connIndicator.className = 'w-2.5 h-2.5 bg-red-500 rounded-full mr-2 shadow-[0_0_8px_rgba(239,68,68,0.6)]';
                 connStatus.innerText = '连接失败';
                 connStatus.className = 'text-red-600 text-sm font-bold tracking-wide';
@@ -340,7 +339,7 @@
         const cachedData = localStorage.getItem('iot_latest_data');
         if (cachedData) {
             try { updateUI(JSON.parse(cachedData), true); } 
-            catch (e) { console.error(e); }
+            catch (e) {}
         }
 
         // Check OneNet config on startup
@@ -386,19 +385,11 @@
 
         if(checkOneNetConfig() !== false) {
             setTimeout(syncData, 500);
-            /* 轮询 + 指数退避: 正常间隔 5s, 连续失败时递增到 30s */
-            let _pollFailures = 0;
-            let _pollTimer = null;
-            function _scheduleNextPoll() {
-                const base = 5000;
-                const max = 30000;
-                const delay = Math.min(base * Math.pow(2, _pollFailures), max);
-                _pollTimer = setTimeout(() => {
-                    syncData().then(() => { _pollFailures = 0; }).catch(() => { _pollFailures++; });
-                    _scheduleNextPoll();
-                }, delay);
-            }
-            _scheduleNextPoll();
+            /* 轮询: 5s 间隔, 失败立即重试一次 (2000ms) */
+            var _pollTimer = setInterval(function() {
+                syncData().catch(function() { setTimeout(syncData, 2000); });
+            }, 5000);
+            window.addEventListener('pagehide', function() { clearInterval(_pollTimer); });
         }
     </script>
     </div>
