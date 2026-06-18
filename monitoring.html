@@ -204,20 +204,29 @@
         });
 
         function updateCards(data) {
+            var isOffline = !(data && data._isOnline);
             sensors.forEach(s => {
+                var valEl = document.getElementById(`val-${s.id}`);
+                var statusEl = document.getElementById(`status-${s.id}`);
+                if (!valEl) return;
+                if (isOffline) {
+                    valEl.innerText = '--';
+                    if (statusEl) { statusEl.innerHTML = '<span class="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2"></span><span class="text-gray-500 text-xs font-bold tracking-wide">设备离线, 无实时数据</span>'; statusEl.className = 'flex items-center mt-2 bg-gray-50 w-max px-2 py-1 rounded-md border border-gray-200'; }
+                    return;
+                }
                 if (data[s.id] !== undefined) {
-                    const decimals = typeof getDecimals === 'function' ? getDecimals(s.dataType, s.step) : 1;
-                    const val = Number(data[s.id]).toFixed(decimals);
-                    document.getElementById(`val-${s.id}`).innerText = val;
-                    
-                    const statusEl = document.getElementById(`status-${s.id}`);
-                    const numericVal = Number(val);
-                    if (numericVal > s.max || numericVal < s.min) {
-                        statusEl.innerHTML = `<span class="w-1.5 h-1.5 bg-red-500 rounded-full mr-2 shadow-[0_0_6px_rgba(239,68,68,0.6)]"></span><span class="text-red-600 text-xs font-bold tracking-wide">状态异常 (${numericVal > s.max ? '偏高' : '偏低'})</span>`;
-                        statusEl.className = 'flex items-center mt-2 bg-red-50/50 w-max px-2 py-1 rounded-md border border-red-100/50';
-                    } else {
-                        statusEl.innerHTML = `<span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-2 shadow-[0_0_6px_rgba(34,197,94,0.6)]"></span><span class="text-green-600 text-xs font-bold tracking-wide">状态正常 (${s.min}-${s.max}${s.unit})</span>`;
-                        statusEl.className = 'flex items-center mt-2 bg-green-50/50 w-max px-2 py-1 rounded-md border border-green-100/50';
+                    var decimals = typeof getDecimals === 'function' ? getDecimals(s.dataType, s.step) : 1;
+                    var val = Number(data[s.id]).toFixed(decimals);
+                    valEl.innerText = val;
+                    if (statusEl) {
+                        var numericVal = Number(val);
+                        if (numericVal > s.max || numericVal < s.min) {
+                            statusEl.innerHTML = `<span class="w-1.5 h-1.5 bg-red-500 rounded-full mr-2 shadow-[0_0_6px_rgba(239,68,68,0.6)]"></span><span class="text-red-600 text-xs font-bold tracking-wide">状态异常 (${numericVal > s.max ? '偏高' : '偏低'})</span>`;
+                            statusEl.className = 'flex items-center mt-2 bg-red-50/50 w-max px-2 py-1 rounded-md border border-red-100/50';
+                        } else {
+                            statusEl.innerHTML = `<span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-2 shadow-[0_0_6px_rgba(34,197,94,0.6)]"></span><span class="text-green-600 text-xs font-bold tracking-wide">状态正常 (${s.min}-${s.max}${s.unit})</span>`;
+                            statusEl.className = 'flex items-center mt-2 bg-green-50/50 w-max px-2 py-1 rounded-md border border-green-100/50';
+                        }
                     }
                 }
             });
@@ -374,7 +383,8 @@
 
         setTimeout(syncData, 500);
         var _monitorPolling = false;
-        setInterval(function() { if (_monitorPolling) return; _monitorPolling = true; syncData().finally(function() { _monitorPolling = false; }); }, 10000);
+        var _monitorTimer = setInterval(function() { if (_monitorPolling) return; _monitorPolling = true; syncData().finally(function() { _monitorPolling = false; }); }, 10000);
+        window.addEventListener('pagehide', function() { clearInterval(_monitorTimer); });
     </script>
     </div>
 

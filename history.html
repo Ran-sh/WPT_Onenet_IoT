@@ -498,7 +498,8 @@
 
         initChart();
         var _histPolling = false;
-        setInterval(function() { if (_histPolling) return; _histPolling = true; syncData().finally(function() { _histPolling = false; }); }, 30000);
+        var _histTimer = setInterval(function() { if (_histPolling) return; _histPolling = true; syncData().finally(function() { _histPolling = false; }); }, 30000);
+        window.addEventListener('pagehide', function() { clearInterval(_histTimer); });
 
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {

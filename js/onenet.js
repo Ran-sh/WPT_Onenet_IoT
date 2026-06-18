@@ -63,6 +63,7 @@ class OneNetService {
             }
 
             var data = {};
+            var newData = {};  /* 延迟写缓存到 _isOnline 确认后 */
             if (result.data && Array.isArray(result.data)) {
                 var rawData = {};
                 result.data.forEach(function(item) {
@@ -85,10 +86,10 @@ class OneNetService {
                     if (data.hasOwnProperty(key) && controlLocks[key] && (now - controlLocks[key] < 3000))
                         data[key] = cachedData[key];
                 }
-                var newData = {};
+                newData = {};
                 for (var k in cachedData) { if (cachedData.hasOwnProperty(k)) newData[k] = cachedData[k]; }
                 for (var k2 in data) { if (data.hasOwnProperty(k2)) newData[k2] = data[k2]; }
-                localStorage.setItem('iot_latest_data', JSON.stringify(newData));
+                /* 延迟写缓存: 等在线状态确认后一并写入 (见下方) */
 
                 /* 历史记录: 每分钟一条, 最多 1440 */
                 var historyData = safeJSONParse(localStorage.getItem('iot_history_data'), []);
@@ -115,6 +116,9 @@ class OneNetService {
                 } catch (e) {}
             }
             data._isOnline = isOnline;
+            /* 在线状态确认后才写缓存, 保证 _isOnline 不丢失 */
+            newData._isOnline = isOnline;
+            localStorage.setItem('iot_latest_data', JSON.stringify(newData));
             return data;
         } catch (error) {
             if (error.message === 'Failed to fetch')

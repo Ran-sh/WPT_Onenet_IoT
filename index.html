@@ -190,18 +190,17 @@
                     const data = await OneNetService.getLatestData();
                     if (data) {
                         updateUI(data);
-                        if (data._isOnline === false) {
-                            connIndicator.className = 'w-2.5 h-2.5 bg-yellow-500 rounded-full mr-2 shadow-[0_0_8px_rgba(234,179,8,0.6)]';
-                            connStatus.innerText = '离线';
-                            connStatus.className = 'text-yellow-600 text-sm font-bold tracking-wide';
-                        } else if (data._isOnline === true) {
+                        if (data._isOnline) {
                             connIndicator.className = 'w-2.5 h-2.5 bg-[#22c55e] rounded-full mr-2 shadow-[0_0_8px_rgba(34,197,94,0.4)]';
                             connStatus.innerText = '在线';
                             connStatus.className = 'text-[#22c55e] text-sm font-bold tracking-wide';
+                        } else {
+                            connIndicator.className = 'w-2.5 h-2.5 bg-yellow-500 rounded-full mr-2 shadow-[0_0_8px_rgba(234,179,8,0.6)]';
+                            connStatus.innerText = '离线';
+                            connStatus.className = 'text-yellow-600 text-sm font-bold tracking-wide';
                         }
-                        /* _isOnline 为 undefined (Mock/未配置) 时不改变指示器 */
+                        /* _isOnline 为 undefined (Mock/未配置) 时进入 else 显示离线 */
                     } else {
-                        throw new Error('未获取到有效数据');
                     }
                 }
             } catch (error) {
@@ -265,17 +264,22 @@
                 }
             };
 
+            var isOffline = !(data && data._isOnline);
             currentModel.sensors.forEach(s => {
+                var valEl = document.getElementById(`sensor-val-${s.id}`);
+                var statusEl = document.getElementById(`sensor-status-${s.id}`);
+                if (isOffline) {
+                    if (valEl) valEl.innerText = '--';
+                    if (statusEl) { statusEl.innerText = '离线'; statusEl.className = 'text-xs font-bold text-gray-400 bg-gray-50 px-3 py-1 rounded-lg border border-gray-200'; }
+                    return;
+                }
                 if (data[s.id] !== undefined) {
-                    const decimals = typeof getDecimals === 'function' ? getDecimals(s.dataType, s.step) : 1;
-                    const val = Number(data[s.id]).toFixed(decimals);
-                    const valEl = document.getElementById(`sensor-val-${s.id}`);
-                    if(valEl) valEl.innerText = val;
-                    
-                    const statusEl = document.getElementById(`sensor-status-${s.id}`);
+                    var decimals = typeof getDecimals === 'function' ? getDecimals(s.dataType, s.step) : 1;
+                    var val = Number(data[s.id]).toFixed(decimals);
+                    if (valEl) valEl.innerText = val;
                     if (statusEl) {
-                        let isAlert = false;
-                        const numericVal = Number(val);
+                        var isAlert = false;
+                        var numericVal = Number(val);
                         if (numericVal > s.max) {
                             isAlert = true;
                             statusEl.innerText = '过高';
@@ -295,19 +299,23 @@
             });
 
             currentModel.controls.forEach(c => {
+                var statusEl = document.getElementById(`control-status-${c.id}`);
+                if (!statusEl) return;
+                if (isOffline) {
+                    statusEl.innerText = '--';
+                    statusEl.className = 'text-xs font-bold px-3 py-1 rounded-full tracking-wide border mr-3 text-gray-400 bg-gray-50 border-gray-200';
+                    return;
+                }
                 if (data[c.id] !== undefined) {
-                    const statusEl = document.getElementById(`control-status-${c.id}`);
-                    if (statusEl) {
-                        if (c.dataType === 'int32' || c.dataType === 'float' || c.dataType === 'double' || c.dataType === 'string') {
-                            statusEl.innerText = String(data[c.id]);
-                            const colors = COLOR_CLASSES[c.color] || COLOR_CLASSES['slate'];
-                            statusEl.className = `text-xs font-bold px-3 py-1 rounded-full tracking-wide border mr-3 ${colors.text} ${colors.bg} ${colors.border}`;
-                        } else {
-                            const isOn = !!data[c.id];
-                            statusEl.innerText = isOn ? '已开启' : '已关闭';
-                            const colors = COLOR_CLASSES[c.color] || COLOR_CLASSES['slate'];
-                            statusEl.className = `text-xs font-bold px-3 py-1 rounded-full tracking-wide border mr-3 ${isOn ? `${colors.text} ${colors.bg} ${colors.border}` : 'text-gray-500 bg-gray-50 border-gray-200/50'}`;
-                        }
+                    if (c.dataType === 'int32' || c.dataType === 'float' || c.dataType === 'double' || c.dataType === 'string') {
+                        statusEl.innerText = String(data[c.id]);
+                        var colors = COLOR_CLASSES[c.color] || COLOR_CLASSES['slate'];
+                        statusEl.className = `text-xs font-bold px-3 py-1 rounded-full tracking-wide border mr-3 ${colors.text} ${colors.bg} ${colors.border}`;
+                    } else {
+                        var isOn = !!data[c.id];
+                        statusEl.innerText = isOn ? '已开启' : '已关闭';
+                        var cColors = COLOR_CLASSES[c.color] || COLOR_CLASSES['slate'];
+                        statusEl.className = `text-xs font-bold px-3 py-1 rounded-full tracking-wide border mr-3 ${isOn ? `${cColors.text} ${cColors.bg} ${cColors.border}` : 'text-gray-500 bg-gray-50 border-gray-200/50'}`;
                     }
                 }
             });
