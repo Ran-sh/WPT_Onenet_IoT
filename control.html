@@ -416,12 +416,15 @@
 
         /* 使用 'load' 事件 + 去重标志, 防止 onload+fallback 重复注册两次 setInterval */
         let _controlSyncStarted = false;
+        let _ctrlSyncTimer = null;
         function _startControlSync() {
             if (_controlSyncStarted) return;
             _controlSyncStarted = true;
             setTimeout(syncStatus, 500);
-            setInterval(syncStatus, 5000);   /* 5s 同步, 与首页刷新率一致 */
-            window.addEventListener('pagehide', function() { _controlSyncStarted = false; });
+            _ctrlSyncTimer = setInterval(syncStatus, 5000);
+            window.addEventListener('pagehide', function() {
+                clearInterval(_ctrlSyncTimer); _controlSyncStarted = false;
+            });
         }
         window.addEventListener('load', _startControlSync);
         /* 初始化: 渲染 UI + 填充缓存 + 启动同步 */

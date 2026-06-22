@@ -32,7 +32,9 @@ function getDataModel() {
             return JSON.parse(saved);
         }
     } catch (e) {
-    return DEFAULT_DATA_MODEL;
+        /* JSON 解析错误, 回退到默认模型 */
+    }
+    return DEFAULT_DATA_MODEL;  /* 保存为空/解析失败 → 统一返回默认 */
 }
 
 function saveDataModel(model) {

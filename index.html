@@ -222,7 +222,7 @@
             let latestAlertMsg = '';
 
             const checkAlert = (type, val, thresh, title, isHigh) => {
-                if (isFromCache || data._isMock || data._isOnline === false) return;
+                if (isFromCache || data._isMock || !data._isOnline) return;
 
                 let alarmStates = JSON.parse(localStorage.getItem('iot_alarm_states') || '{}');
                 const stateKey = `${type}_${isHigh ? 'high' : 'low'}`;
