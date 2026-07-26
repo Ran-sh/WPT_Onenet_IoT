@@ -1,6 +1,6 @@
 # WPT_Onenet_IoT — 无线充电网页控制台
 
-[![Deploy](https://img.shields.io/badge/Deploy-Cloudflare%20Pages-F38020)]()
+[![Deploy](https://img.shields.io/badge/Deploy-Cloudflare%20Workers-F38020)]()
 [![Framework](https://img.shields.io/badge/Framework-Vanilla%20JS-yellow)]()
 [![PWA](https://img.shields.io/badge/PWA-Enabled-5A0FC8)]()
 [![Charts](https://img.shields.io/badge/Charts-Chart.js-FF6384)]()
@@ -49,7 +49,7 @@ WPT 无线充电系统 V5.1.3 的响应式网页端控制台，部署于 Cloudfl
 
 ```
 ┌─────────────────────────────┐
-│     Cloudflare Pages        │
+│    Cloudflare Workers       │
 │  ┌───────────────────────┐  │
 │  │   index.html          │  │  ← 仪表盘 (首页)
 │  │   monitoring.html     │  │  ← 实时监控
@@ -80,7 +80,7 @@ WPT 无线充电系统 V5.1.3 的响应式网页端控制台，部署于 Cloudfl
 
 ### 登录页 (`login.html`)
 
-全屏居中登录表单, 输入账号密码后存入 `localStorage`, 其他页面检查登录状态。未登录自动跳转登录页。
+全屏居中登录表单。普通登录写入 `sessionStorage`，浏览器会话结束后失效；勾选保持登录时写入带时间戳的 `localStorage`，最长7天。6个业务页面在业务脚本前加载 `js/auth-guard.js`，未登录时自动跳转登录页。
 
 ### 仪表盘 (`index.html`)
 
@@ -131,7 +131,7 @@ WPT 无线充电系统 V5.1.3 的响应式网页端控制台，部署于 Cloudfl
 | 图标 | Font Awesome Free (CDN) |
 | PWA | Service Worker + manifest.json |
 | 存储 | `localStorage` (配置 + 缓存 + 锁) |
-| 部署 | Cloudflare Pages (Git 自动部署) |
+| 部署 | Cloudflare Workers 静态资源（Git 自动部署） |
 
 ---
 
@@ -169,21 +169,23 @@ setProperty({setfreq: 108}):
 
 ## 部署
 
-### Cloudflare Pages
+### Cloudflare Workers
 
-1. 关联 GitHub 仓库 `Ran-sh/WPT_Onenet_IoT`
-2. 监听分支: `gh-pages` + `master`
-3. 构建命令: 无 (纯静态)
-4. 输出目录: `/` (根目录)
-5. SPA 路由: 启用 (404 → index.html)
+1. 在 Workers & Pages 中关联 GitHub 仓库 `Ran-sh/WPT_Onenet_IoT`。
+2. 生产分支使用 `master`；`gh-pages` 保持为完全相同的发布镜像。
+3. 项目由 `wrangler.jsonc` 声明根目录静态资源和 SPA 回退，无需前端构建命令。
+4. 部署完成后访问 `https://wptonenet.483763727.workers.dev/`，用无痕窗口验证登录守卫和V5.1.3版本元数据。
 
 ### 手动推送
 
 ```bash
 cd ONENETapp
 git add -A && git commit -m "..."
+git push origin master
+git switch gh-pages
+git merge --ff-only master
 git push origin gh-pages
-git push origin gh-pages:master   # Cloudflare 同时监听 master
+git switch master
 ```
 
 部署后约 1~2 分钟生效。
@@ -205,10 +207,11 @@ ONENETapp/
 ├── js/
 │   ├── config.js       # OneNET 配置 + 数据模型 CRUD + 工具函数
 │   ├── onenet.js       # OneNetService 类 (数据拉取 + 属性设置)
+│   ├── auth-guard.js   # 统一登录守卫（必须先于业务脚本加载）
 │   └── mobile-nav.js   # 移动端底部导航栏 (自动注入)
 ├── service-worker.js   # PWA 离线支持
 ├── manifest.json       # PWA 清单
-└── wrangler.jsonc      # Cloudflare Pages 配置
+└── wrangler.jsonc      # Cloudflare Workers 静态资源配置
 ```
 
 ---
