@@ -22,18 +22,54 @@ function getOneNetConfig() {
     return { PRODUCT_ID: '', DEVICE_NAME: '', TOKEN: '', BASE_URL: 'https://iot-api.heclouds.com' };
 }
 
+/* 所有网络请求都设置超时, 避免断网时页面长时间卡在加载状态。 */
+async function fetchWithTimeout(url, options, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(function() { controller.abort(); }, timeoutMs || 10000);
+    try {
+        const requestOptions = Object.assign({}, options || {}, { signal: controller.signal });
+        return await fetch(url, requestOptions);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+function validateControlParams(model, params) {
+    var keys = Object.keys(params || {});
+    if (keys.length === 0) return false;
+    return keys.every(function(key) {
+        var control = model.controls.find(function(item) { return item.id === key; });
+        var value = params[key];
+        if (!control) return false;
+        if (control.dataType === 'bool') return typeof value === 'boolean';
+        value = Number(value);
+        if (!Number.isFinite(value)) return false;
+        if (control.min !== undefined && value < control.min) return false;
+        if (control.max !== undefined && value > control.max) return false;
+        if (control.id === 'setfreq') {
+            if (value < 100) return Math.abs(value * 10 - Math.round(value * 10)) <= 1e-7;
+            return Number.isInteger(value);
+        }
+        if (!control.step || control.step <= 0) return true;
+        var scaled = (value - (control.min || 0)) / control.step;
+        return Math.abs(scaled - Math.round(scaled)) <= 1e-7;
+    });
+}
+
 class OneNetService {
     static async getLatestData() {
         var config = getOneNetConfig();
         try {
             if (!config.TOKEN) return this.getMockData();
 
-            var url = config.BASE_URL + '/thingmodel/query-device-property?product_id=' + config.PRODUCT_ID + '&device_name=' + config.DEVICE_NAME;
-            var statusUrl = config.BASE_URL + '/device/detail?product_id=' + config.PRODUCT_ID + '&device_name=' + config.DEVICE_NAME;
+            var productId = encodeURIComponent(config.PRODUCT_ID);
+            var deviceName = encodeURIComponent(config.DEVICE_NAME);
+            var url = config.BASE_URL + '/thingmodel/query-device-property?product_id=' + productId + '&device_name=' + deviceName;
+            var statusUrl = config.BASE_URL + '/device/detail?product_id=' + productId + '&device_name=' + deviceName;
 
             var results = await Promise.all([
-                fetch(url, { method: 'GET', headers: { 'Authorization': config.TOKEN } }),
-                fetch(statusUrl, { method: 'GET', headers: { 'Authorization': config.TOKEN } }).catch(function() { return null; })
+                fetchWithTimeout(url, { method: 'GET', headers: { 'Authorization': config.TOKEN } }, 10000),
+                fetchWithTimeout(statusUrl, { method: 'GET', headers: { 'Authorization': config.TOKEN } }, 10000).catch(function() { return null; })
             ]);
             var response = results[0], statusResponse = results[1];
 
@@ -91,18 +127,6 @@ class OneNetService {
                 for (var k2 in data) { if (data.hasOwnProperty(k2)) newData[k2] = data[k2]; }
                 /* 延迟写缓存: 等在线状态确认后一并写入 (见下方) */
 
-                /* 历史记录: 每分钟一条, 最多 1440 */
-                var historyData = safeJSONParse(localStorage.getItem('iot_history_data'), []);
-                var d = new Date();
-                var timeStr = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
-                var fullTimeStr = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2) + ' ' + timeStr + ':' + ('0' + d.getSeconds()).slice(-2);
-                if (historyData.length === 0 || historyData[historyData.length - 1].time !== timeStr) {
-                    historyData.push({ time: timeStr, fullTime: fullTimeStr, timestamp: Date.now(), data: {} });
-                    var last = historyData[historyData.length - 1].data;
-                    for (var dk in data) { if (data.hasOwnProperty(dk)) last[dk] = data[dk]; }
-                    if (historyData.length > 1440) historyData.shift();
-                    localStorage.setItem('iot_history_data', JSON.stringify(historyData));
-                }
             }
 
             var isOnline = (result.data && result.data.length > 0);
@@ -119,8 +143,24 @@ class OneNetService {
             /* 在线状态确认后才写缓存, 保证 _isOnline 不丢失 */
             newData._isOnline = isOnline;
             localStorage.setItem('iot_latest_data', JSON.stringify(newData));
+            if (isOnline) {
+                /* 历史记录使用完整日期+分钟去重, 跨天同一时刻不会被误判重复。 */
+                var historyData = safeJSONParse(localStorage.getItem('iot_history_data'), []);
+                var d = new Date();
+                var timeStr = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+                var minuteKey = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2) + ' ' + timeStr;
+                var fullTimeStr = minuteKey + ':' + ('0' + d.getSeconds()).slice(-2);
+                var previous = historyData.length ? historyData[historyData.length - 1] : null;
+                var previousKey = previous ? String(previous.fullTime || '').slice(0, 16) : '';
+                if (!previous || previousKey !== minuteKey) {
+                    historyData.push({ time: timeStr, fullTime: fullTimeStr, timestamp: Date.now(), data: Object.assign({}, data) });
+                    if (historyData.length > 1440) historyData.shift();
+                    localStorage.setItem('iot_history_data', JSON.stringify(historyData));
+                }
+            }
             return data;
         } catch (error) {
+            if (error.name === 'AbortError') throw new Error('请求超时: 请检查网络连接');
             if (error.message === 'Failed to fetch')
                 throw new Error('网络请求被拦截(请重启APP生效)');
             throw error;
@@ -146,9 +186,11 @@ class OneNetService {
 
     static async setProperty(params) {
         var config = getOneNetConfig();
+        if (!config.TOKEN || !config.PRODUCT_ID || !config.DEVICE_NAME || !params || typeof params !== 'object') return false;
         var retries = 3;
         var UNRECOVERABLE = [401, 403];
         var model = typeof getDataModel === 'function' ? getDataModel() : { sensors: [], controls: [] };
+        if (!validateControlParams(model, params)) return false;
         var reverseMap = {};
         model.controls.forEach(function(c) { reverseMap[c.id] = c.cloudKey; });
         model.sensors.forEach(function(s) { reverseMap[s.id] = s.cloudKey; });
@@ -162,13 +204,17 @@ class OneNetService {
             mappedParams[reverseMap[key] || key] = val;
         }
 
+        /* V4.5.0: 保存重试前缓存快照, 用于最终失败时回滚 */
+        var preSnapshot = localStorage.getItem('iot_latest_data');
+        var preLocks    = localStorage.getItem('iot_control_locks');
+
         while (retries > 0) {
             try {
-                var response = await fetch(config.BASE_URL + '/thingmodel/set-device-property', {
+                var response = await fetchWithTimeout(config.BASE_URL + '/thingmodel/set-device-property', {
                     method: 'POST',
                     headers: { 'Authorization': config.TOKEN, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ product_id: config.PRODUCT_ID, device_name: config.DEVICE_NAME, params: mappedParams })
-                });
+                }, 10000);
                 if (UNRECOVERABLE.indexOf(response.status) !== -1) return false;
                 var result = await response.json();
                 if (result.code === 0) {
@@ -187,6 +233,9 @@ class OneNetService {
                 if (retries > 0) await new Promise(function(r) { setTimeout(r, 800); });
             }
         }
+        /* V4.5.0: 全部重试失败 → 回滚乐观缓存, 防止界面显示未确认的过期值 */
+        if (preSnapshot !== null) localStorage.setItem('iot_latest_data', preSnapshot);
+        if (preLocks    !== null) localStorage.setItem('iot_control_locks', preLocks);
         return false;
     }
 }

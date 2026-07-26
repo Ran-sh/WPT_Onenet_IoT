@@ -1,17 +1,28 @@
 /**
- * Data Model Configuration Manager
- * Manages the dynamic configuration of sensors and controls.
+ * WPT 数据模型配置（V5.1.2）
+ * 纯数据存储在读取时重新补回频率换算函数。
  */
 
+const DATA_MODEL_VERSION = 2;
+
+function frequencyFromCloud(value) {
+    return Math.round(Number(value) / 100) / 10;
+}
+
+function frequencyToCloud(value) {
+    return Math.round(Number(value) * 1000);
+}
+
 const DEFAULT_DATA_MODEL = {
+    version: DATA_MODEL_VERSION,
     sensors: [
         { id: 'voltage', name: '电压', icon: 'fa-bolt', color: 'cyan', unit: 'V', cloudKey: 'V', min: 0, max: 50, dataType: 'float', step: 0.01 },
-        { id: 'current', name: '电流', icon: 'fa-bolt', color: 'yellow', unit: 'A', cloudKey: 'I', min: 0, max: 10, dataType: 'float', step: 0.001 },
-        { id: 'freq', name: '频率', icon: 'fa-wave-square', color: 'blue', unit: 'kHz', cloudKey: 'F', min: 95, max: 150, dataType: 'int32', step: 1, fromCloud: v => Math.floor(v / 1000) }
+        { id: 'current', name: '电流', icon: 'fa-bolt', color: 'yellow', unit: 'A', cloudKey: 'I', min: 0, max: 5, dataType: 'float', step: 0.001 },
+        { id: 'freq', name: '频率', icon: 'fa-wave-square', color: 'blue', unit: 'kHz', cloudKey: 'F', min: 20, max: 200, dataType: 'int32', step: 0.1, fromCloud: frequencyFromCloud }
     ],
     controls: [
         { id: 'switch', name: '启停控制', icon: 'fa-power-off', color: 'red', cloudKey: 'Switch', dataType: 'bool', step: 1 },
-        { id: 'setfreq', name: '频率设置', icon: 'fa-sliders-h', color: 'blue', unit: 'kHz', cloudKey: 'SetFreq', dataType: 'int32', step: 1, min: 95, max: 150, toCloud: v => v * 1000, fromCloud: v => Math.floor(v / 1000) }
+        { id: 'setfreq', name: '频率设置', icon: 'fa-sliders-h', color: 'blue', unit: 'kHz', cloudKey: 'SetFreq', dataType: 'int32', step: 0.1, min: 20, max: 200, toCloud: frequencyToCloud, fromCloud: frequencyFromCloud }
     ]
 };
 
@@ -25,31 +36,81 @@ const COMMON_ICONS = [
     'fa-door-open', 'fa-door-closed', 'fa-car-battery', 'fa-satellite-dish'
 ];
 
+function copyFields(source) {
+    const target = {};
+    if (!source || typeof source !== 'object') return target;
+    Object.keys(source).forEach(function(key) {
+        if (typeof source[key] !== 'function') target[key] = source[key];
+    });
+    return target;
+}
+
+function normalizeGroup(savedItems, defaults) {
+    const saved = Array.isArray(savedItems) ? savedItems : [];
+    const used = new Set();
+    const result = defaults.map(function(defaultItem) {
+        const index = saved.findIndex(function(item) { return item && item.id === defaultItem.id; });
+        const merged = Object.assign(copyFields(defaultItem), index >= 0 ? copyFields(saved[index]) : {});
+        if (index >= 0) used.add(index);
+        /* 与固件安全边界有关的字段不允许被旧缓存覆盖。 */
+        if (merged.id === 'current') merged.max = 5;
+        if (merged.id === 'freq' || merged.id === 'setfreq') {
+            merged.min = 20;
+            merged.max = 200;
+            merged.step = 0.1;
+            merged.fromCloud = frequencyFromCloud;
+            if (merged.id === 'setfreq') merged.toCloud = frequencyToCloud;
+        }
+        return merged;
+    });
+    saved.forEach(function(item, index) {
+        if (!used.has(index) && item && item.id) result.push(copyFields(item));
+    });
+    return result;
+}
+
+function normalizeDataModel(model) {
+    const source = model && typeof model === 'object' ? model : {};
+    return {
+        version: DATA_MODEL_VERSION,
+        sensors: normalizeGroup(source.sensors, DEFAULT_DATA_MODEL.sensors),
+        controls: normalizeGroup(source.controls, DEFAULT_DATA_MODEL.controls)
+    };
+}
+
 function getDataModel() {
     try {
         const saved = localStorage.getItem('iot_data_model');
-        if (saved) {
-            return JSON.parse(saved);
-        }
+        if (saved) return normalizeDataModel(JSON.parse(saved));
     } catch (e) {
         /* JSON 解析错误, 回退到默认模型 */
     }
-    return DEFAULT_DATA_MODEL;  /* 保存为空/解析失败 → 统一返回默认 */
+    return normalizeDataModel(null);  /* 保存为空/解析失败 → 统一返回默认 */
 }
 
 function saveDataModel(model) {
-    localStorage.setItem('iot_data_model', JSON.stringify(model));
+    localStorage.setItem('iot_data_model', JSON.stringify(normalizeDataModel(model)));
+}
+
+/**
+ * HTML 实体编码 — 防止 XSS 攻击
+ * 对所有来自 localStorage/API 的用户可控字符串,
+ * 在插入 innerHTML 前必须通过此函数转义。
+ */
+function escapeHtml(str) {
+    if (typeof str !== 'string') return String(str);
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
 }
 
 // Helper to determine decimal places based on data type and step
 function getDecimals(dataType, step) {
-    if (dataType === 'int32') return 0;
-    if (step === undefined || step === null) return 1;
-    const stepStr = String(step);
-    if (stepStr.includes('.')) {
-        return stepStr.split('.')[1].length;
+    if (step !== undefined && step !== null) {
+        const stepStr = String(step);
+        if (stepStr.includes('.')) return stepStr.split('.')[1].length;
     }
-    return 0;
+    return dataType === 'int32' ? 0 : 1;
 }
 
 // UI Color mapping helpers

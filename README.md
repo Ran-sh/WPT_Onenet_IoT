@@ -5,6 +5,7 @@
 [![PWA](https://img.shields.io/badge/PWA-Enabled-5A0FC8)]()
 [![Charts](https://img.shields.io/badge/Charts-Chart.js-FF6384)]()
 [![CSS](https://img.shields.io/badge/CSS-Tailwind-06B6D4)]()
+[![Version](https://img.shields.io/badge/Version-V5.1.2-brightgreen)]()
 
 WPT 无线充电系统的响应式网页端控制台，部署于 Cloudflare Pages。通过 OneNET HTTP API 直连云平台物模型，提供实时监控、远程控制、历史数据、数据模型管理等完整功能。支持 PWA 离线访问，可添加至手机主屏幕。
 
@@ -17,7 +18,7 @@ WPT 无线充电系统的响应式网页端控制台，部署于 Cloudflare Page
 1. [功能总览](#功能总览)
 2. [架构](#架构)
 3. [页面功能](#页面功能)
-4. [登录凭据](#登录凭据)
+4. [登录说明](#登录说明)
 5. [技术栈](#技术栈)
 6. [数据流](#数据流)
 7. [部署](#部署)
@@ -39,7 +40,7 @@ WPT 无线充电系统的响应式网页端控制台，部署于 Cloudflare Page
 | ⚙️ **数据模型管理** | 传感器/控制器动态增删, 图标/颜色/单位/范围自定义 |
 | 📱 **PWA** | Service Worker 离线缓存, 可添加到手机主屏幕 |
 | 🌗 **深色模式** | 自适应系统主题, 全局 CSS 变量 |
-| 🔐 **登录保护** | 简单登录页, 防未经授权访问 |
+| 🔐 **本地访问门控** | 前端登录页只用于界面门控，真正设备鉴权仍由 OneNET Token 完成 |
 
 ---
 
@@ -112,14 +113,9 @@ WPT 无线充电系统的响应式网页端控制台，部署于 Cloudflare Page
 
 ---
 
-## 登录凭据
+## 登录说明
 
-| 字段 | 值 |
-|:---|:---|
-| 账号 | `admin` |
-| 密码 | `123456789` |
-
-登录状态存储在 `localStorage`, 关闭浏览器后需重新登录。
+仓库不提供可公开复用的默认密码。纯前端登录无法代替服务端鉴权：正式部署时应使用独立账号体系或托管平台访问策略，OneNET Token必须按设备隔离、定期轮换。
 
 ---
 
@@ -146,7 +142,7 @@ WPT 无线充电系统的响应式网页端控制台，部署于 Cloudflare Page
 fetchAll() 每 5~10s:
   GET /thingmodel/query-device-property
   → JSON: {code:0, data:[{identifier:"V", value:"12.5", time:...}]}
-  → config.js fromCloud 转换 (如 F/1000 → kHz)
+  → config.js fromCloud 转换 (Hz → 保留1位小数的kHz)
   → 渲染 UI
   → 存入 localStorage 缓存
   → 历史数据采样 (每分钟一条)
@@ -245,10 +241,10 @@ Token 格式: `version=2018-10-31&res=products%2F{产品ID}%2Fdevices%2F{设备�
 | 数据类型 | `float` / `int32` / `bool` / `string` | `float` |
 | 最小/最大值 | 数值范围 | `0` ~ `50` |
 | 步进 | 数值精度 | `0.01` |
-| fromCloud | 数据转换 (云端→前端) | `v => Math.floor(v/1000)` |
-| toCloud | 数据转换 (前端→云端) | `v => v * 1000` |
+| fromCloud | 数据转换 (云端→前端) | `Math.round(v / 100) / 10` |
+| toCloud | 数据转换 (前端→云端) | `Math.round(v * 1000)` |
 
-默认模型包含 3 个传感器 (`voltage`, `current`, `freq`) 和 2 个控制器 (`switch`, `setfreq`)。
+默认模型包含 3 个传感器 (`voltage`, `current`, `freq`) 和 2 个控制器 (`switch`, `setfreq`)。电流安全上限为5A；频率范围20–200kHz，20.0–99.9kHz步进0.1kHz，100–200kHz步进1kHz。旧版本地模型会在读取时自动迁移并恢复频率换算函数。
 
 ---
 
@@ -258,7 +254,7 @@ Token 格式: `version=2018-10-31&res=products%2F{产品ID}%2Fdevices%2F{设备�
 |:---|:---|:---|
 | 所有卡片显示 `--` | 未配置 OneNET 凭证 | 进设置页填写产品 ID / 设备名 / Token |
 | 设置页改了但仪表盘没变 | 页面缓存 | 切换页面或刷新, 仪表盘监听 `visibilitychange` |
-| 下发指令无效 | ESP8266 固件版本旧 | V4.3.0 修复了 SetFreq/Switch 遥测覆盖问题 |
+| 下发指令无效 | ESP8266 固件版本或频率步进不匹配 | 使用V5.1.2固件，并确认频率在20–200kHz合法步进上 |
 | 历史图表为空 | 数据量不足 | 至少等 1 分钟 (每分钟采样 1 条) |
 | PWA 安装无效 | 浏览器不支持 | Chrome/Edge iOS 不支持 PWA 安装, 用 Safari "添加到主屏幕" |
 | `net::ERR_FAILED` | CORS 被浏览器拦截 | OneNET API 不应有 CORS 问题, 检查 Token 是否正确 |
