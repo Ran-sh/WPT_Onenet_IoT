@@ -2,8 +2,8 @@
 (function() {
   if (window.innerWidth >= 1024) return;
   const nav = document.createElement('nav');
-  nav.className = 'lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 flex justify-around items-center';
-  nav.style.cssText = 'padding:8px 0;padding-bottom:max(8px, env(safe-area-inset-bottom))';
+  nav.className = 'app-mobile-nav lg:hidden';
+  nav.setAttribute('aria-label', '主导航');
 
   const items = [
     { href: '/', icon: 'fa-home', label: '首页' },
@@ -15,17 +15,14 @@
   ];
 
   var path = window.location.pathname.replace(/\.html$/, '').replace(/\/$/, '') || '/';
+  if (path === '/index') path = '/';
 
   var navHtml = '';
   items.forEach(function(item) {
     var isActive = (path === item.href || (item.href !== '/' && path.indexOf(item.href) === 0));
-    navHtml += '<a href="' + item.href + '" class="flex flex-col items-center px-2 py-1 no-underline" style="color:' + (isActive ? '#3b82f6' : '#9ca3af') + '"><i class="fas ' + item.icon + '" style="font-size:20px"></i><span style="font-size:10px;margin-top:2px;font-weight:500">' + item.label + '</span></a>';
+    navHtml += '<a href="' + item.href + '" class="app-mobile-nav__item' + (isActive ? ' is-active' : '') + '"' + (isActive ? ' aria-current="page"' : '') + '><i class="fas ' + item.icon + '" aria-hidden="true"></i><span>' + item.label + '</span></a>';
   });
   nav.innerHTML = navHtml;
 
   document.body.appendChild(nav);
-  const main = document.querySelector('main') || document.querySelector('.flex-1');
-  if (main) {
-    main.style.paddingBottom = 'calc(64px + env(safe-area-inset-bottom, 0px))';
-  }
 })();

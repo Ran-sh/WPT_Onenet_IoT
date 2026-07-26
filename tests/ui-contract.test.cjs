@@ -30,6 +30,7 @@ test('移动导航由共享样式控制并标记当前页面', () => {
   const script = read('js/mobile-nav.js');
   assert.match(script, /app-mobile-nav/);
   assert.match(script, /aria-current/);
+  assert.match(script, /path === '\/index'/);
   assert.doesNotMatch(script, /nav\.style\.cssText/);
 });
 

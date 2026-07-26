@@ -1,11 +1,12 @@
 /* Service Worker — 离线回退 + 版本管理
  * 使用相对作用域, 兼容根路径和子路径部署 */
-var CACHE = 'wpt-v4';
+var CACHE = 'wpt-v5-1-2-ui';
 var BASE = self.location.pathname.replace(/\/[^/]*$/, '');
 var ASSETS = [
   BASE + '/', BASE + '/login.html', BASE + '/index.html', BASE + '/monitoring.html',
   BASE + '/control.html', BASE + '/history.html', BASE + '/alerts.html', BASE + '/settings.html',
-  BASE + '/js/config.js', BASE + '/js/onenet.js', BASE + '/js/mobile-nav.js'
+  BASE + '/js/config.js', BASE + '/js/onenet.js', BASE + '/js/mobile-nav.js',
+  BASE + '/css/dashboard-v5.css'
 ];
 
 self.addEventListener('install', function(e) {

@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="css/dashboard-v5.css">
     <script src="js/config.js"></script>
     <script src="js/onenet.js"></script>
     <style>
@@ -16,7 +17,7 @@
         
     </style>
 </head>
-<body class="flex h-screen overflow-hidden bg-[#f4f7fb]" style="padding-bottom:env(safe-area-inset-bottom, 0px)">
+<body data-page="monitoring" class="flex h-screen overflow-hidden bg-[#f4f7fb]" style="padding-bottom:env(safe-area-inset-bottom, 0px)">
 
     <!-- PC Sidebar -->
     <aside class="w-64 bg-white shadow-lg hidden lg:flex flex-col z-50 flex-shrink-0 relative h-screen">
@@ -68,12 +69,27 @@
         </div>
     </header>
 
-    <main class="px-10 py-5 space-y-6">
+    <main class="monitor-main px-10 py-5 space-y-6">
+        <section class="monitor-overview" aria-label="监测状态概览">
+            <div>
+                <span class="monitor-kicker">LIVE TELEMETRY</span>
+                <h2>无线充电实时状态</h2>
+                <p>集中查看电压、电流和实际输出频率</p>
+            </div>
+            <div class="monitor-overview-meta">
+                <span id="monitorStatusChip" class="monitor-status-chip" data-state="offline">
+                    <span class="monitor-status-dot" aria-hidden="true"></span>
+                    <span id="monitorStatusText">等待设备</span>
+                </span>
+                <span class="monitor-updated">更新<strong id="lastUpdateText">--:--:--</strong></span>
+            </div>
+        </section>
+
         <!-- Dynamic Sensors -->
-        <div id="sensorCardsContainer" class="space-y-6"></div>
+        <div id="sensorCardsContainer" class="monitor-grid"></div>
 
         <!-- Trend Chart -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex-1 flex flex-col">
+        <div class="trend-panel bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex-1 flex flex-col">
             <div class="flex justify-between items-center mb-6">
                 <h3 class="font-bold text-gray-900 tracking-tight text-base">近30分钟变化趋势</h3>
                 <a class='text-sm font-bold text-blue-500 flex items-center active:opacity-70 transition' href='/history' id='historyLink'>
@@ -82,7 +98,7 @@
             </div>
 
             <!-- Segmented Control Tabs -->
-            <div id="chartTabsContainer" class="flex bg-white p-1.5 rounded-xl border border-gray-200 shadow-sm mb-6 overflow-x-auto custom-scrollbar space-x-1"></div>
+            <div id="chartTabsContainer" class="chart-tabs flex bg-white p-1.5 rounded-xl border border-gray-200 shadow-sm mb-6 overflow-x-auto custom-scrollbar space-x-1"></div>
             
             <div id="trendChartWrap" class="h-56 lg:h-72 w-full relative transition-opacity duration-300 cursor-pointer" onclick="document.getElementById('historyLink').click()">
                 <canvas id="trendChart"></canvas>
@@ -123,7 +139,7 @@
                 
                 // Card
                 container.innerHTML += `
-                    <a href="history.html?metric=${s.id}" class="bg-white rounded-2xl p-6 relative overflow-hidden flex flex-col border border-gray-200 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 cursor-pointer group">
+                    <a href="history.html?metric=${s.id}" class="monitor-card bg-white rounded-2xl p-6 relative overflow-hidden flex flex-col border border-gray-200 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 cursor-pointer group">
                         <div class="flex justify-between items-start">
                             <div>
                                 <div class="text-sm font-bold text-gray-500 uppercase tracking-widest mb-2">${s.name}</div>
@@ -146,7 +162,7 @@
                 // Tab
                 const isSelected = index === 0;
                 tabsContainer.innerHTML += `
-                    <button type="button" data-metric="${s.id}" class="metric-tab flex-1 py-2 px-3 text-sm font-bold rounded-lg transition-all whitespace-nowrap ${isSelected ? 'bg-white text-blue-600 shadow-[0_2px_8px_rgba(0,0,0,0.04)]' : 'text-gray-500 hover:text-gray-700'}">
+                    <button type="button" data-metric="${s.id}" aria-selected="${isSelected}" class="metric-tab flex-1 py-2 px-3 text-sm font-bold rounded-lg transition-all whitespace-nowrap ${isSelected ? 'bg-white text-blue-600 shadow-[0_2px_8px_rgba(0,0,0,0.04)]' : 'text-gray-500 hover:text-gray-700'}">
                         ${s.name}
                     </button>
                 `;
@@ -185,6 +201,7 @@
                     }
                 }
             } catch (error) {
+                updateOverview(null, 'error');
             } finally {
                 if (isManual && refreshIcon) {
                     setTimeout(() => refreshIcon.classList.remove('fa-spin'), 500);
@@ -203,8 +220,25 @@
             }
         });
 
+        function updateOverview(data, forcedState) {
+            var chip = document.getElementById('monitorStatusChip');
+            var text = document.getElementById('monitorStatusText');
+            var updated = document.getElementById('lastUpdateText');
+            if (!chip || !text || !updated) return;
+
+            var state = forcedState || (data && data._isOnline ? 'online' : 'offline');
+            chip.dataset.state = state;
+            text.innerText = state === 'online' ? '设备在线' : (state === 'error' ? '连接失败' : '设备离线');
+            if (state === 'online') {
+                updated.innerText = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+            } else if (state === 'offline') {
+                updated.innerText = '--:--:--';
+            }
+        }
+
         function updateCards(data) {
             var isOffline = !(data && data._isOnline);
+            updateOverview(data);
             sensors.forEach(s => {
                 var valEl = document.getElementById(`val-${s.id}`);
                 var statusEl = document.getElementById(`status-${s.id}`);
@@ -339,9 +373,11 @@
 
             document.querySelectorAll('.metric-tab').forEach(tab => {
                 if (tab.dataset.metric === metricKey) {
+                    tab.setAttribute('aria-selected', 'true');
                     tab.classList.add('bg-white', 'text-blue-600', 'shadow-[0_2px_8px_rgba(0,0,0,0.04)]');
                     tab.classList.remove('text-gray-500', 'hover:text-gray-700');
                 } else {
+                    tab.setAttribute('aria-selected', 'false');
                     tab.classList.remove('bg-white', 'text-blue-600', 'shadow-[0_2px_8px_rgba(0,0,0,0.04)]');
                     tab.classList.add('text-gray-500', 'hover:text-gray-700');
                 }
