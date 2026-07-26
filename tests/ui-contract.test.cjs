@@ -41,3 +41,31 @@ test('视觉系统覆盖移动端、可访问焦点和减少动画偏好', () =>
   assert.match(css, /prefers-reduced-motion/);
   assert.match(css, /--wpt-accent/);
 });
+
+test('所有受保护页面在业务脚本前加载统一登录守卫', () => {
+  for (const page of pages.filter((name) => name !== 'login')) {
+    const html = read(`${page}.html`);
+    const guardAt = html.indexOf('js/auth-guard.js');
+    const configAt = html.indexOf('js/config.js');
+    assert.ok(guardAt > 0, `${page}.html 缺少登录守卫`);
+    assert.ok(configAt < 0 || guardAt < configAt, `${page}.html 登录守卫加载过晚`);
+  }
+
+  assert.ok(fs.existsSync(path.join(root, 'js', 'auth-guard.js')), '缺少统一登录守卫脚本');
+  const guard = read('js/auth-guard.js');
+  assert.match(guard, /sessionStorage/);
+  assert.match(guard, /lastLoginTime/);
+  assert.match(guard, /login\.html/);
+  assert.match(read('login.html'), /sessionStorage\.setItem/);
+});
+
+test('网页活动资源统一标记V5.1.3', () => {
+  for (const page of pages) {
+    assert.match(read(`${page}.html`), /name=["']wpt-version["'][^>]*V5\.1\.3/);
+  }
+  assert.match(read('js/config.js'), /V5\.1\.3/);
+  assert.match(read('js/onenet.js'), /V5\.1\.3/);
+  assert.match(read('js/mobile-nav.js'), /V5\.1\.3/);
+  assert.match(read('css/dashboard-v5.css'), /V5\.1\.3/);
+  assert.match(read('README.md'), /V5\.1\.3/);
+});
