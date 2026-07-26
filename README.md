@@ -5,9 +5,9 @@
 [![PWA](https://img.shields.io/badge/PWA-Enabled-5A0FC8)]()
 [![Charts](https://img.shields.io/badge/Charts-Chart.js-FF6384)]()
 [![CSS](https://img.shields.io/badge/CSS-Tailwind-06B6D4)]()
-[![Version](https://img.shields.io/badge/Version-V5.1.2-brightgreen)]()
+[![Version](https://img.shields.io/badge/Version-V5.1.3-brightgreen)]()
 
-WPT 无线充电系统的响应式网页端控制台，部署于 Cloudflare Pages。通过 OneNET HTTP API 直连云平台物模型，提供实时监控、远程控制、历史数据、数据模型管理等完整功能。支持 PWA 离线访问，可添加至手机主屏幕。
+WPT 无线充电系统 V5.1.3 的响应式网页端控制台，部署于 Cloudflare Workers 静态资源服务。通过 OneNET HTTP API 直连云平台物模型，提供实时监控、远程控制、历史数据、数据模型管理与统一登录守卫。支持 PWA 离线访问，可添加至手机主屏幕。
 
 ## 访问地址
 
@@ -257,7 +257,7 @@ Token 格式: `version=2018-10-31&res=products%2F{产品ID}%2Fdevices%2F{设备�
 |:---|:---|:---|
 | 所有卡片显示 `--` | 未配置 OneNET 凭证 | 进设置页填写产品 ID / 设备名 / Token |
 | 设置页改了但仪表盘没变 | 页面缓存 | 切换页面或刷新, 仪表盘监听 `visibilitychange` |
-| 下发指令无效 | ESP8266 固件版本或频率步进不匹配 | 使用V5.1.2固件，并确认频率在20–200kHz合法步进上 |
+| 下发指令无效 | ESP8266 固件版本或频率步进不匹配 | 使用V5.1.3固件，并确认频率在20–200kHz合法步进上 |
 | 历史图表为空 | 数据量不足 | 至少等 1 分钟 (每分钟采样 1 条) |
 | PWA 安装无效 | 浏览器不支持 | Chrome/Edge iOS 不支持 PWA 安装, 用 Safari "添加到主屏幕" |
 | `net::ERR_FAILED` | CORS 被浏览器拦截 | OneNET API 不应有 CORS 问题, 检查 Token 是否正确 |

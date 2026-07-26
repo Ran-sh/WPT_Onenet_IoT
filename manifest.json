@@ -1,5 +1,6 @@
 {
   "name": "WPT 无线充电监控",
+  "version": "V5.1.3",
   "short_name": "WPT Monitor",
   "description": "WPT 全桥逆变器远程监控与控制系统",
   "start_url": "/login.html",

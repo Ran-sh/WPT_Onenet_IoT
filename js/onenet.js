@@ -1,5 +1,5 @@
 /**
- * OneNet WPT Monitor Service
+ * OneNet WPT Monitor Service（V5.1.3）
  * 用于与 OneNet 云平台进行数据同步
  */
 
