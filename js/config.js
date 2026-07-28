@@ -3,7 +3,10 @@
  * 纯数据存储在读取时重新补回频率换算函数。
  */
 
-const DATA_MODEL_VERSION = 2;
+const DATA_MODEL_VERSION = 3;
+const MAX_MODEL_ITEMS = 24;
+const MODEL_COLORS = ['orange', 'blue', 'slate', 'cyan', 'teal', 'yellow', 'red', 'green', 'purple', 'pink'];
+const MODEL_TYPES = ['bool', 'int32', 'float', 'double', 'string'];
 
 function frequencyFromCloud(value) {
     return Math.round(Number(value) / 100) / 10;
@@ -26,15 +29,89 @@ const DEFAULT_DATA_MODEL = {
     ]
 };
 
-// Common FontAwesome icons for the user to select
+/* 仅允许使用已知图标类，避免本地缓存被篡改后注入属性。 */
 const COMMON_ICONS = [
     'fa-thermometer-half', 'fa-droplet', 'fa-wind', 'fa-water', 'fa-fire', 
     'fa-bolt', 'fa-lightbulb', 'fa-fan', 'fa-toggle-on', 'fa-toggle-off', 
     'fa-bell', 'fa-bullhorn', 'fa-plug', 'fa-power-off', 'fa-microchip', 
     'fa-server', 'fa-battery-full', 'fa-smog', 'fa-cloud', 'fa-sun',
     'fa-snowflake', 'fa-lock', 'fa-unlock', 'fa-video', 'fa-camera',
-    'fa-door-open', 'fa-door-closed', 'fa-car-battery', 'fa-satellite-dish'
+    'fa-door-open', 'fa-door-closed', 'fa-car-battery', 'fa-satellite-dish',
+    'fa-wave-square', 'fa-sliders-h'
 ];
+
+function readLocalJSON(key, fallback) {
+    try {
+        const value = localStorage.getItem(key);
+        return value === null ? fallback : JSON.parse(value);
+    } catch (error) {
+        return fallback;
+    }
+}
+
+function readLocalArray(key) {
+    const value = readLocalJSON(key, []);
+    return Array.isArray(value) ? value : [];
+}
+
+function readLocalObject(key) {
+    const value = readLocalJSON(key, {});
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function writeLocalJSON(key, value) {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+        return true;
+    } catch (error) {
+        return false;
+    }
+}
+
+function sanitizeText(value, fallback, maxLength) {
+    const text = typeof value === 'string' ? value.trim().replace(/[<>&"'`]/g, '') : '';
+    return (text || fallback || '').slice(0, maxLength);
+}
+
+function sanitizeNumber(value, fallback) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+}
+
+function sanitizeModelItem(item, fallback) {
+    const source = item && typeof item === 'object' ? item : {};
+    const base = fallback && typeof fallback === 'object' ? fallback : {};
+    const idCandidate = sanitizeText(source.id, base.id, 32);
+    const id = /^[A-Za-z][A-Za-z0-9_]*$/.test(idCandidate) ? idCandidate : base.id;
+    if (!id) return null;
+
+    const iconCandidate = sanitizeText(source.icon, base.icon || 'fa-microchip', 40);
+    const colorCandidate = sanitizeText(source.color, base.color || 'slate', 12);
+    const typeCandidate = sanitizeText(source.dataType, base.dataType || 'float', 12);
+    const min = sanitizeNumber(source.min, sanitizeNumber(base.min, 0));
+    const max = sanitizeNumber(source.max, sanitizeNumber(base.max, 100));
+    const step = sanitizeNumber(source.step, sanitizeNumber(base.step, 1));
+    const normalized = {
+        id: id,
+        name: sanitizeText(source.name, base.name || id, 40),
+        icon: COMMON_ICONS.indexOf(iconCandidate) >= 0 ? iconCandidate : (base.icon || 'fa-microchip'),
+        color: MODEL_COLORS.indexOf(colorCandidate) >= 0 ? colorCandidate : (base.color || 'slate'),
+        unit: sanitizeText(source.unit, base.unit || '', 12),
+        cloudKey: sanitizeText(source.cloudKey, base.cloudKey || id, 64),
+        dataType: MODEL_TYPES.indexOf(typeCandidate) >= 0 ? typeCandidate : (base.dataType || 'float'),
+        step: step > 0 ? step : 1
+    };
+
+    if (source.min !== undefined || source.max !== undefined || base.min !== undefined || base.max !== undefined) {
+        normalized.min = Math.min(min, max);
+        normalized.max = Math.max(min, max);
+    }
+
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(normalized.cloudKey)) normalized.cloudKey = base.cloudKey || id;
+    if (base.fromCloud) normalized.fromCloud = base.fromCloud;
+    if (base.toCloud) normalized.toCloud = base.toCloud;
+    return normalized;
+}
 
 function copyFields(source) {
     const target = {};
@@ -46,11 +123,12 @@ function copyFields(source) {
 }
 
 function normalizeGroup(savedItems, defaults) {
-    const saved = Array.isArray(savedItems) ? savedItems : [];
+    const saved = Array.isArray(savedItems) ? savedItems.slice(0, MAX_MODEL_ITEMS) : [];
     const used = new Set();
+    const seenIds = new Set();
     const result = defaults.map(function(defaultItem) {
         const index = saved.findIndex(function(item) { return item && item.id === defaultItem.id; });
-        const merged = Object.assign(copyFields(defaultItem), index >= 0 ? copyFields(saved[index]) : {});
+        const merged = sanitizeModelItem(index >= 0 ? Object.assign(copyFields(defaultItem), copyFields(saved[index])) : defaultItem, defaultItem);
         if (index >= 0) used.add(index);
         /* 与固件安全边界有关的字段不允许被旧缓存覆盖。 */
         if (merged.id === 'current') merged.max = 5;
@@ -61,10 +139,16 @@ function normalizeGroup(savedItems, defaults) {
             merged.fromCloud = frequencyFromCloud;
             if (merged.id === 'setfreq') merged.toCloud = frequencyToCloud;
         }
+        seenIds.add(merged.id);
         return merged;
     });
     saved.forEach(function(item, index) {
-        if (!used.has(index) && item && item.id) result.push(copyFields(item));
+        if (used.has(index) || !item || !item.id) return;
+        const normalized = sanitizeModelItem(item, null);
+        if (normalized && !seenIds.has(normalized.id)) {
+            seenIds.add(normalized.id);
+            result.push(normalized);
+        }
     });
     return result;
 }
@@ -79,17 +163,11 @@ function normalizeDataModel(model) {
 }
 
 function getDataModel() {
-    try {
-        const saved = localStorage.getItem('iot_data_model');
-        if (saved) return normalizeDataModel(JSON.parse(saved));
-    } catch (e) {
-        /* JSON 解析错误, 回退到默认模型 */
-    }
-    return normalizeDataModel(null);  /* 保存为空/解析失败 → 统一返回默认 */
+    return normalizeDataModel(readLocalJSON('iot_data_model', null));
 }
 
 function saveDataModel(model) {
-    localStorage.setItem('iot_data_model', JSON.stringify(normalizeDataModel(model)));
+    return writeLocalJSON('iot_data_model', normalizeDataModel(model));
 }
 
 /**
@@ -111,6 +189,22 @@ function getDecimals(dataType, step) {
         if (stepStr.includes('.')) return stepStr.split('.')[1].length;
     }
     return dataType === 'int32' ? 0 : 1;
+}
+
+function getWptState(data) {
+    if (!data || data._isMock) return 'PREVIEW';
+    if (!data._isOnline) return 'OFFLINE';
+    if (data.switch === true || data.switch === 1 || data.switch === 'true' || data.switch === '1') return 'RUNNING';
+    if (Number(data.freq) > 0) return 'SWEEP';
+    return 'IDLE';
+}
+
+function isSensorValueNormal(sensor, value, data) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return false;
+    /* STM32 在 IDLE/FAULT 状态按协议上报 F=0，这不是低频报警。 */
+    if (sensor && sensor.id === 'freq' && numericValue === 0 && getWptState(data) === 'IDLE') return true;
+    return numericValue >= sensor.min && numericValue <= sensor.max;
 }
 
 // UI Color mapping helpers

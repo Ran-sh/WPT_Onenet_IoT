@@ -1,6 +1,6 @@
 /**
- * OneNet WPT Monitor Service（V5.1.3）
- * 用于与 OneNet 云平台进行数据同步
+ * OneNET WPT Monitor Service（V5.1.3）
+ * 用于与 OneNET 云平台进行数据同步
  */
 
 /* 安全: 无 console 输出, 无 token 泄露 */
@@ -8,7 +8,7 @@ function safeJSONParse(str, fallback) {
     try { return JSON.parse(str); } catch (e) { return fallback; }
 }
 
-/* 动态获取 OneNet 配置 */
+/* 动态获取 OneNET 配置 */
 function getOneNetConfig() {
     var userConfig = safeJSONParse(localStorage.getItem('iot_onenet_config'), null);
     if (userConfig && userConfig.productId && userConfig.deviceName && userConfig.token) {
@@ -54,6 +54,28 @@ function validateControlParams(model, params) {
         var scaled = (value - (control.min || 0)) / control.step;
         return Math.abs(scaled - Math.round(scaled)) <= 1e-7;
     });
+}
+
+function getStoredObject(key) {
+    if (typeof readLocalObject === 'function') return readLocalObject(key);
+    var value = safeJSONParse(localStorage.getItem(key), {});
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function normalizeCloudValue(definition, rawValue) {
+    if (!definition) return undefined;
+    if (definition.dataType === 'bool') {
+        if (rawValue === true || rawValue === 1 || rawValue === '1' || rawValue === 'true') return true;
+        if (rawValue === false || rawValue === 0 || rawValue === '0' || rawValue === 'false') return false;
+        return undefined;
+    }
+    if (definition.dataType === 'int32' || definition.dataType === 'float' || definition.dataType === 'double') {
+        var number = Number(rawValue);
+        if (!Number.isFinite(number)) return undefined;
+        if (definition.fromCloud) number = definition.fromCloud(number);
+        return Number.isFinite(number) ? number : undefined;
+    }
+    return String(rawValue).slice(0, 256);
 }
 
 class OneNetService {
@@ -111,12 +133,20 @@ class OneNetService {
                 });
 
                 var model = typeof getDataModel === 'function' ? getDataModel() : { sensors: [], controls: [] };
-                model.sensors.forEach(function(s) { if (rawData[s.cloudKey] !== undefined) { var v = rawData[s.cloudKey]; if (s.fromCloud) v = s.fromCloud(v); data[s.id] = v; } });
-                model.controls.forEach(function(c) { if (rawData[c.cloudKey] !== undefined) { var v = rawData[c.cloudKey]; if (c.fromCloud) v = c.fromCloud(v); data[c.id] = v; } });
+                model.sensors.forEach(function(s) {
+                    if (rawData[s.cloudKey] === undefined) return;
+                    var value = normalizeCloudValue(s, rawData[s.cloudKey]);
+                    if (value !== undefined) data[s.id] = value;
+                });
+                model.controls.forEach(function(c) {
+                    if (rawData[c.cloudKey] === undefined) return;
+                    var value = normalizeCloudValue(c, rawData[c.cloudKey]);
+                    if (value !== undefined) data[c.id] = value;
+                });
 
                 /* 乐观锁: 3s 内下发过的属性不覆盖 */
-                var cachedData = safeJSONParse(localStorage.getItem('iot_latest_data'), {});
-                var controlLocks = safeJSONParse(localStorage.getItem('iot_control_locks'), {});
+                var cachedData = getStoredObject('iot_latest_data');
+                var controlLocks = getStoredObject('iot_control_locks');
                 var now = Date.now();
                 for (var key in data) {
                     if (data.hasOwnProperty(key) && controlLocks[key] && (now - controlLocks[key] < 3000))
@@ -129,7 +159,8 @@ class OneNetService {
 
             }
 
-            var isOnline = (result.data && result.data.length > 0);
+            /* 只有设备详情接口明确确认在线才开放实时状态，避免把历史属性误判为在线。 */
+            var isOnline = false;
             if (statusResponse && statusResponse.ok) {
                 try {
                     var statusResult = await statusResponse.json();
@@ -142,10 +173,14 @@ class OneNetService {
             data._isOnline = isOnline;
             /* 在线状态确认后才写缓存, 保证 _isOnline 不丢失 */
             newData._isOnline = isOnline;
-            localStorage.setItem('iot_latest_data', JSON.stringify(newData));
+            if (typeof writeLocalJSON === 'function') writeLocalJSON('iot_latest_data', newData);
+            else localStorage.setItem('iot_latest_data', JSON.stringify(newData));
             if (isOnline) {
                 /* 历史记录使用完整日期+分钟去重, 跨天同一时刻不会被误判重复。 */
-                var historyData = safeJSONParse(localStorage.getItem('iot_history_data'), []);
+                var historyData = typeof readLocalArray === 'function'
+                    ? readLocalArray('iot_history_data')
+                    : safeJSONParse(localStorage.getItem('iot_history_data'), []);
+                if (!Array.isArray(historyData)) historyData = [];
                 var d = new Date();
                 var timeStr = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
                 var minuteKey = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2) + ' ' + timeStr;
@@ -155,7 +190,8 @@ class OneNetService {
                 if (!previous || previousKey !== minuteKey) {
                     historyData.push({ time: timeStr, fullTime: fullTimeStr, timestamp: Date.now(), data: Object.assign({}, data) });
                     if (historyData.length > 1440) historyData.shift();
-                    localStorage.setItem('iot_history_data', JSON.stringify(historyData));
+                    if (typeof writeLocalJSON === 'function') writeLocalJSON('iot_history_data', historyData);
+                    else localStorage.setItem('iot_history_data', JSON.stringify(historyData));
                 }
             }
             return data;
@@ -168,18 +204,20 @@ class OneNetService {
     }
 
     static getMockData() {
-        var mockData = { _isMock: true };
+        var mockData = { _isMock: true, _isOnline: false };
         var model = typeof getDataModel === 'function' ? getDataModel() : { sensors: [], controls: [] };
         model.sensors.forEach(function(s) {
-            var range = s.max - s.min, mid = s.min + range / 2;
-            var rawVal = mid + (Math.random() * (range * 0.2) - (range * 0.1));
+            var min = Number.isFinite(Number(s.min)) ? Number(s.min) : 0;
+            var max = Number.isFinite(Number(s.max)) ? Number(s.max) : min + 100;
+            var rawVal = min + (max - min) / 2;
             var decimals = typeof getDecimals === 'function' ? getDecimals(s.dataType, s.step) : 1;
             mockData[s.id] = Number(rawVal.toFixed(decimals));
         });
         model.controls.forEach(function(c) {
-            if (c.dataType === 'int32') mockData[c.id] = Math.floor(Math.random() * 100);
-            else if (c.dataType === 'bool') mockData[c.id] = Math.random() > 0.5;
-            else mockData[c.id] = Number((Math.random() * 100).toFixed(2));
+            if (c.dataType === 'bool') mockData[c.id] = false;
+            else if (c.dataType === 'string') mockData[c.id] = '预览';
+            else if (c.id === 'setfreq') mockData[c.id] = 100;
+            else mockData[c.id] = Number.isFinite(Number(c.min)) ? Number(c.min) : 0;
         });
         return mockData;
     }
@@ -204,7 +242,7 @@ class OneNetService {
             mappedParams[reverseMap[key] || key] = val;
         }
 
-        /* V4.5.0: 保存重试前缓存快照, 用于最终失败时回滚 */
+        /* 保存重试前缓存快照，用于最终失败时回滚。 */
         var preSnapshot = localStorage.getItem('iot_latest_data');
         var preLocks    = localStorage.getItem('iot_control_locks');
 
@@ -218,12 +256,17 @@ class OneNetService {
                 if (UNRECOVERABLE.indexOf(response.status) !== -1) return false;
                 var result = await response.json();
                 if (result.code === 0) {
-                    var cachedData = safeJSONParse(localStorage.getItem('iot_latest_data'), {});
-                    var controlLocks = safeJSONParse(localStorage.getItem('iot_control_locks'), {});
+                    var cachedData = getStoredObject('iot_latest_data');
+                    var controlLocks = getStoredObject('iot_control_locks');
                     var now = Date.now();
                     for (var k in params) { if (params.hasOwnProperty(k)) { cachedData[k] = params[k]; controlLocks[k] = now; } }
-                    localStorage.setItem('iot_latest_data', JSON.stringify(cachedData));
-                    localStorage.setItem('iot_control_locks', JSON.stringify(controlLocks));
+                    if (typeof writeLocalJSON === 'function') {
+                        writeLocalJSON('iot_latest_data', cachedData);
+                        writeLocalJSON('iot_control_locks', controlLocks);
+                    } else {
+                        localStorage.setItem('iot_latest_data', JSON.stringify(cachedData));
+                        localStorage.setItem('iot_control_locks', JSON.stringify(controlLocks));
+                    }
                     return true;
                 }
                 retries--;
@@ -233,7 +276,7 @@ class OneNetService {
                 if (retries > 0) await new Promise(function(r) { setTimeout(r, 800); });
             }
         }
-        /* V4.5.0: 全部重试失败 → 回滚乐观缓存, 防止界面显示未确认的过期值 */
+        /* 全部重试失败后回滚乐观缓存，防止界面显示未确认的过期值。 */
         if (preSnapshot !== null) localStorage.setItem('iot_latest_data', preSnapshot);
         if (preLocks    !== null) localStorage.setItem('iot_control_locks', preLocks);
         return false;

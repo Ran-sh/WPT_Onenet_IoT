@@ -2,10 +2,13 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="wpt-version" content="V5.1.3">
+    <meta name="theme-color" content="#102832">
+    <meta name="description" content="WPT 无线充电系统实时监测与远程控制入口">
     <title>WPT Monitor - 登录</title>
     <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="css/dashboard-v5.css">
@@ -36,9 +39,10 @@
         </div>
 
         <div class="relative z-10 mb-20">
-            <h1 class="text-5xl font-extrabold leading-tight mb-6">连接一切<br/>掌控全局</h1>
+            <div class="inline-flex items-center px-3 py-1 rounded-full bg-cyan-300/10 border border-cyan-200/20 text-cyan-100 text-xs font-bold tracking-widest mb-6">STM32 · ESP8266 · OneNET</div>
+            <h1 class="text-5xl font-extrabold leading-tight mb-6">看清输出<br/>安全控制</h1>
             <p class="text-lg text-blue-100 max-w-md leading-relaxed">
-                企业级物联网设备监控与管理平台。提供实时数据监测、远程设备控制、历史趋势分析以及异常报警提醒，助力您的数字化转型。
+                面向 WPT 无线充电装置的专用监控台。集中查看电压、电流、实际频率和设备状态，并按固件边界安全下发控制。
             </p>
         </div>
 
@@ -52,7 +56,7 @@
         <div class="w-full max-w-md space-y-8">
             <div class="text-center lg:text-left mb-10">
                 <h2 class="text-3xl font-extrabold text-gray-900 mb-2">欢迎登录</h2>
-                <p class="text-gray-500 text-sm">请输入您的管理员账号与密码进入系统</p>
+                <p class="text-gray-500 text-sm">登录后进入无线充电监测与控制台</p>
             </div>
 
             <form id="loginForm" class="space-y-6">
@@ -62,7 +66,8 @@
                         <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
                             <i class="fas fa-user text-sm"></i>
                         </div>
-                        <input type="text" id="username" name="username" placeholder="请输入管理员账号" required
+                        <input type="text" id="username" name="username" placeholder="请输入管理员账号" required autocomplete="username" autocapitalize="none" maxlength="64"
+                            aria-describedby="loginSecurityNote"
                             class="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 text-sm focus:outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 transition-all">
                     </div>
                 </div>
@@ -73,9 +78,13 @@
                         <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
                             <i class="fas fa-lock text-sm"></i>
                         </div>
-                        <input type="password" id="password" name="password" placeholder="请输入密码" required
-                            class="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 text-sm focus:outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 transition-all">
+                        <input type="password" id="password" name="password" placeholder="请输入密码" required autocomplete="current-password" maxlength="128"
+                            class="w-full pl-11 pr-12 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 text-sm focus:outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 transition-all">
+                        <button type="button" id="togglePassword" aria-label="显示密码" class="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-cyan-700">
+                            <i id="passwordIcon" class="fas fa-eye"></i>
+                        </button>
                     </div>
+                    <p id="capsLockHint" class="hidden mt-2 text-xs font-bold text-amber-600" role="status"><i class="fas fa-arrow-up mr-1"></i>大写锁定已开启</p>
                 </div>
 
                 <div class="flex items-center justify-between">
@@ -83,13 +92,17 @@
                         <input type="checkbox" id="autoLogin" class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
                         <span class="ml-2 text-sm text-gray-500 group-hover:text-gray-700 transition-colors">自动登录 (7天)</span>
                     </label>
-                    <a href="#" class="text-sm font-medium text-blue-600 hover:text-blue-500 transition-colors">忘记密码?</a>
+                    <span class="text-xs font-medium text-gray-400">最长保持 7 天</span>
                 </div>
 
-                <button type="submit" 
+                <button type="submit" id="loginButton"
                     class="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-600/30 transition-all transform hover:-translate-y-0.5">
-                    登录系统
+                    <i id="loginButtonIcon" class="fas fa-arrow-right-to-bracket mr-2"></i><span id="loginButtonText">登录系统</span>
                 </button>
+
+                <div id="loginSecurityNote" class="rounded-xl border border-amber-100 bg-amber-50/60 px-3.5 py-3 text-xs leading-relaxed text-amber-800">
+                    <i class="fas fa-circle-info mr-1"></i>此页面是本地访问门控，不代替 Cloudflare Access 或 OneNET 设备鉴权。
+                </div>
             </form>
 
             <!-- Mobile Footer -->
@@ -100,7 +113,7 @@
     </div>
 
     <!-- Error Toast -->
-    <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 bg-red-50 border border-red-200 text-red-600 px-6 py-3 rounded-lg text-sm font-bold shadow-lg shadow-red-500/10 opacity-0 transition-all duration-300 pointer-events-none z-50 transform -translate-y-4 flex items-center">
+    <div id="toast" role="alert" aria-live="assertive" class="fixed top-5 left-1/2 -translate-x-1/2 bg-red-50 border border-red-200 text-red-600 px-6 py-3 rounded-lg text-sm font-bold shadow-lg shadow-red-500/10 opacity-0 transition-all duration-300 pointer-events-none z-50 transform -translate-y-4 flex items-center">
         <i class="fas fa-exclamation-circle mr-2"></i>
         <span id="toastMsg" class="ml-2">账号或密码错误</span>
     </div>
@@ -111,19 +124,29 @@
             document.getElementById('toastMsg').innerText = msg;
             toast.classList.remove('opacity-0', '-translate-y-4');
             toast.classList.add('opacity-100', 'translate-y-0');
-            setTimeout(() => {
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
                 toast.classList.add('opacity-0', '-translate-y-4');
                 toast.classList.remove('opacity-100', 'translate-y-0');
             }, 3000);
         }
 
+        var MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+        var ATTEMPT_KEY = 'wpt_login_attempts';
+        var toastTimer = null;
+
         /* 会话登录或七天自动登录仍有效时，直接进入原目标页面。 */
         window.addEventListener('DOMContentLoaded', function() {
             var sessionValid = sessionStorage.getItem('wpt_session_auth') === '1';
-            var lastLogin = Number(localStorage.getItem('lastLoginTime'));
-            var persistentValid = Number.isFinite(lastLogin) && lastLogin > 0 &&
-                (Date.now() - lastLogin) < 7 * 24 * 60 * 60 * 1000;
+            var persistentRecord = null;
+            try { persistentRecord = JSON.parse(localStorage.getItem('wpt_persistent_auth') || 'null'); } catch (error) {}
+            var now = Date.now();
+            var persistentValid = !!(persistentRecord && persistentRecord.version === 1 &&
+                now >= Number(persistentRecord.issuedAt) && now < Number(persistentRecord.expiresAt) &&
+                Number(persistentRecord.expiresAt) - Number(persistentRecord.issuedAt) <= MAX_AGE_MS);
             if (sessionValid || persistentValid) window.location.replace(getSafeNextPath());
+            else document.getElementById('username').focus();
+            if ('serviceWorker' in navigator) navigator.serviceWorker.register('/service-worker.js').catch(function() {});
         });
 
         function getSafeNextPath() {
@@ -132,29 +155,87 @@
             return next.charAt(0) === '/' && next.indexOf('//') !== 0 ? next : '/';
         }
 
-        /* 安全: 密码验证使用 SHA-256 哈希, 不在源码中存储明文 */
-        var DEFAULT_PW_HASH = 'bf6b5bdb74c79ece9fc0ad0ac9fb0359f9555d4f35a83b2e6ec69ae99e09603d'; /* sha256("admin:admin123") */
-        function getStoredHash() { return localStorage.getItem('iot_pw_hash') || DEFAULT_PW_HASH; }
+        /* 浏览器端哈希只避免源码出现明文，不构成服务器端身份认证。 */
+        var DEFAULT_PW_HASH = 'bf6b5bdb74c79ece9fc0ad0ac9fb0359f9555d4f35a83b2e6ec69ae99e09603d';
 
         async function checkPassword(user, pw) {
             var data = new TextEncoder().encode(user + ':' + pw);
             var hashBytes = await crypto.subtle.digest('SHA-256', data);
             var hex = Array.from(new Uint8Array(hashBytes)).map(function(b) { return ('00' + b.toString(16)).slice(-2); }).join('');
-            return hex === getStoredHash();
+            var expected = DEFAULT_PW_HASH;
+            var mismatch = hex.length ^ expected.length;
+            for (var i = 0; i < Math.min(hex.length, expected.length); i++) mismatch |= hex.charCodeAt(i) ^ expected.charCodeAt(i);
+            return mismatch === 0;
         }
+
+        function getAttemptState() {
+            try { return JSON.parse(sessionStorage.getItem(ATTEMPT_KEY) || '{"count":0,"lockedUntil":0}'); }
+            catch (error) { return { count: 0, lockedUntil: 0 }; }
+        }
+
+        function recordFailedAttempt() {
+            var state = getAttemptState();
+            state.count = Number(state.count || 0) + 1;
+            state.lockedUntil = state.count >= 5 ? Date.now() + 30000 : 0;
+            if (state.count >= 5) state.count = 0;
+            sessionStorage.setItem(ATTEMPT_KEY, JSON.stringify(state));
+            return state;
+        }
+
+        function setLoginBusy(busy) {
+            var button = document.getElementById('loginButton');
+            button.disabled = busy;
+            document.getElementById('loginButtonText').textContent = busy ? '正在验证' : '登录系统';
+            document.getElementById('loginButtonIcon').className = busy ? 'fas fa-circle-notch fa-spin mr-2' : 'fas fa-arrow-right-to-bracket mr-2';
+        }
+
+        document.getElementById('togglePassword').addEventListener('click', function() {
+            var input = document.getElementById('password');
+            var visible = input.type === 'text';
+            input.type = visible ? 'password' : 'text';
+            this.setAttribute('aria-label', visible ? '显示密码' : '隐藏密码');
+            document.getElementById('passwordIcon').className = visible ? 'fas fa-eye' : 'fas fa-eye-slash';
+            input.focus();
+        });
+
+        document.getElementById('password').addEventListener('keyup', function(event) {
+            document.getElementById('capsLockHint').classList.toggle('hidden', !event.getModifierState('CapsLock'));
+        });
 
         document.getElementById('loginForm').addEventListener('submit', async function(e) {
             e.preventDefault();
-            var username = document.getElementById('username').value;
+            var state = getAttemptState();
+            if (Number(state.lockedUntil) > Date.now()) {
+                showToast('尝试次数过多，请在 ' + Math.ceil((state.lockedUntil - Date.now()) / 1000) + ' 秒后重试');
+                return;
+            }
+            var username = document.getElementById('username').value.trim();
             var password = document.getElementById('password').value;
             var autoLogin = document.getElementById('autoLogin').checked;
-            if (await checkPassword(username, password)) {
-                sessionStorage.setItem('wpt_session_auth', '1');
-                if (autoLogin) localStorage.setItem('lastLoginTime', Date.now());
-                else localStorage.removeItem('lastLoginTime');
-                window.location.replace(getSafeNextPath());
-                if ('serviceWorker' in navigator) navigator.serviceWorker.register('/service-worker.js');
-            } else { showToast('账号或密码错误！'); }
+            setLoginBusy(true);
+            try {
+                if (await checkPassword(username, password)) {
+                    var now = Date.now();
+                    sessionStorage.setItem('wpt_session_auth', '1');
+                    sessionStorage.removeItem(ATTEMPT_KEY);
+                    if (autoLogin) {
+                        localStorage.setItem('lastLoginTime', now);
+                        localStorage.setItem('wpt_persistent_auth', JSON.stringify({ version: 1, issuedAt: now, expiresAt: now + MAX_AGE_MS }));
+                    } else {
+                        localStorage.removeItem('lastLoginTime');
+                        localStorage.removeItem('wpt_persistent_auth');
+                    }
+                    window.location.replace(getSafeNextPath());
+                } else {
+                    var failed = recordFailedAttempt();
+                    showToast(failed.lockedUntil ? '连续失败 5 次，已暂停登录 30 秒' : '账号或密码错误');
+                    document.getElementById('password').select();
+                }
+            } catch (error) {
+                showToast('当前浏览器无法完成安全哈希校验，请使用最新版浏览器');
+            } finally {
+                setLoginBusy(false);
+            }
         });
     </script>
 </body>

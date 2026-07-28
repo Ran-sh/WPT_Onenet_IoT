@@ -40,8 +40,8 @@ WPT 无线充电系统 V5.1.3 的响应式网页端控制台，部署于 Cloudfl
 | 📉 **历史数据** | Chart.js 折线图展示 V/I/F 趋势, 每分钟自动采样 |
 | ⚙️ **数据模型管理** | 传感器/控制器动态增删, 图标/颜色/单位/范围自定义 |
 | 📱 **PWA** | Service Worker 离线缓存, 可添加到手机主屏幕 |
-| 🌗 **深色模式** | 自适应系统主题, 全局 CSS 变量 |
 | 🔐 **本地访问门控** | 前端登录页只用于界面门控，真正设备鉴权仍由 OneNET Token 完成 |
+| 🧭 **状态语义** | 根据 `Switch` 与实际频率区分待机、扫频和运行，预览数据不冒充在线 |
 
 ---
 
@@ -80,7 +80,7 @@ WPT 无线充电系统 V5.1.3 的响应式网页端控制台，部署于 Cloudfl
 
 ### 登录页 (`login.html`)
 
-全屏居中登录表单。普通登录写入 `sessionStorage`，浏览器会话结束后失效；勾选保持登录时写入带时间戳的 `localStorage`，最长7天。6个业务页面在业务脚本前加载 `js/auth-guard.js`，未登录时自动跳转登录页。
+全屏登录表单。普通登录写入 `sessionStorage`，浏览器会话结束后失效；勾选保持登录时保存签发时间和失效时间，最长7天。连续失败5次会暂停30秒。6个业务页面在业务脚本前加载 `js/auth-guard.js`，未登录时自动跳转登录页并保留安全的站内回跳地址。
 
 ### 仪表盘 (`index.html`)
 
@@ -97,7 +97,7 @@ WPT 无线充电系统 V5.1.3 的响应式网页端控制台，部署于 Cloudfl
 - **数值控制器 (SetFreq)**: 输入框 + 发送按钮, `toCloud` 自动转换 (kHz → Hz)
 - **字符串控制器**: 输入框 + 发送
 
-每 60 秒自动同步状态, 手动点击同步按钮立即更新。下发指令后 3 秒乐观锁保护, 防止云端旧值回弹。
+每5秒自动同步状态，页面隐藏后停止轮询，恢复可见时重新同步。手动点击同步按钮可立即更新。下发指令后有3秒乐观锁保护，防止云端旧值回弹。频率输入严格执行20.0–99.9kHz/0.1kHz与100–200kHz/1kHz两档步进。
 
 ### 历史数据 (`history.html`)
 
@@ -108,15 +108,20 @@ WPT 无线充电系统 V5.1.3 的响应式网页端控制台，部署于 Cloudfl
 
 ### 设置 (`settings.html`)
 
-两个 Tab:
-- **OneNET 配置**: 产品 ID、设备名、Token, 存入 `localStorage`
-- **数据模型管理**: 增/删/改传感器和控制器, 实时生效。传感器支持: 名称、图标 (FontAwesome)、颜色、单位、云端映射键、数据类型 (float/int32)、最小值/最大值、步进、`fromCloud` 转换函数。控制器支持: 同上, 外加 `toCloud` 转换函数 (如 `v => v * 1000`)。
+设置页集中管理：
+
+- **OneNET配置**：产品ID、设备名、Token，保存在当前浏览器的 `localStorage`。
+- **数据模型**：增、删、改传感器和控制器；缓存内容会经过标识符、图标、类型、长度和数量校验。
+- **固件核心项**：电压、电流、频率、启停和设频不可删除；5A上限及20–200kHz边界不可被旧缓存覆盖。
+- **本机数据**：系统名称、报警声音、历史与缓存清理。
 
 ---
 
 ## 登录说明
 
-仓库不提供可公开复用的默认密码。纯前端登录无法代替服务端鉴权：正式部署时应使用独立账号体系或托管平台访问策略，OneNET Token必须按设备隔离、定期轮换。
+当前默认账号为 `admin`，默认密码为 `admin123`。
+
+该账号只用于前端本地门控，哈希与验证程序都会随静态网页下发，不能抵御主动绕过，也不能视为真正的公网身份认证。正式部署必须在 Cloudflare 中启用 Access 或接入服务端账号体系。OneNET Token 应按设备隔离、设置有效期并定期轮换，不应在共享电脑上保存。
 
 ---
 
@@ -127,9 +132,9 @@ WPT 无线充电系统 V5.1.3 的响应式网页端控制台，部署于 Cloudfl
 | HTML | 原生 HTML5, 语义标签 |
 | CSS | Tailwind CSS (CDN), 自定义全局变量 |
 | JS | 原生 ES6 (无框架), async/await, fetch API |
-| 图表 | Chart.js v4 (CDN, 仅历史页加载) |
+| 图表 | Chart.js 4.4.7（CDN，监测页与历史页） |
 | 图标 | Font Awesome Free (CDN) |
-| PWA | Service Worker + manifest.json |
+| PWA | Service Worker + manifest.json + SVG Maskable图标 |
 | 存储 | `localStorage` (配置 + 缓存 + 锁) |
 | 部署 | Cloudflare Workers 静态资源（Git 自动部署） |
 
@@ -173,8 +178,9 @@ setProperty({setfreq: 108}):
 
 1. 在 Workers & Pages 中关联 GitHub 仓库 `Ran-sh/WPT_Onenet_IoT`。
 2. 生产分支使用 `master`；`gh-pages` 保持为完全相同的发布镜像。
-3. 项目由 `wrangler.jsonc` 声明根目录静态资源和 SPA 回退，无需前端构建命令。
-4. 部署完成后访问 `https://wptonenet.483763727.workers.dev/`，用无痕窗口验证登录守卫和V5.1.3版本元数据。
+3. 项目由 `wrangler.jsonc` 声明根目录静态资源和SPA回退，无需前端构建命令。
+4. 在 Cloudflare Zero Trust 中为 `wptonenet.483763727.workers.dev` 配置 Access 策略，避免仅依赖前端门控。
+5. 部署完成后访问 `https://wptonenet.483763727.workers.dev/`，用无痕窗口验证登录、受保护页面、OneNET连接和V5.1.3版本元数据。
 
 ### 手动推送
 
@@ -211,6 +217,9 @@ ONENETapp/
 │   └── mobile-nav.js   # 移动端底部导航栏 (自动注入)
 ├── service-worker.js   # PWA 离线支持
 ├── manifest.json       # PWA 清单
+├── icon.svg            # PWA普通/Maskable图标
+├── tests/
+│   └── ui-contract.test.cjs # UI、登录、PWA和脚本语法契约
 └── wrangler.jsonc      # Cloudflare Workers 静态资源配置
 ```
 
@@ -262,14 +271,15 @@ Token 格式: `version=2018-10-31&res=products%2F{产品ID}%2Fdevices%2F{设备�
 | 设置页改了但仪表盘没变 | 页面缓存 | 切换页面或刷新, 仪表盘监听 `visibilitychange` |
 | 下发指令无效 | ESP8266 固件版本或频率步进不匹配 | 使用V5.1.3固件，并确认频率在20–200kHz合法步进上 |
 | 历史图表为空 | 数据量不足 | 至少等 1 分钟 (每分钟采样 1 条) |
-| PWA 安装无效 | 浏览器不支持 | Chrome/Edge iOS 不支持 PWA 安装, 用 Safari "添加到主屏幕" |
-| `net::ERR_FAILED` | CORS 被浏览器拦截 | OneNET API 不应有 CORS 问题, 检查 Token 是否正确 |
+| 页面显示“预览” | 未配置OneNET | 预览值不是实时设备数据，进入设置页配置云平台 |
+| PWA 安装无效 | 浏览器或部署条件不满足 | 确认使用HTTPS并检查清单、Service Worker与图标请求 |
+| `net::ERR_FAILED` | 网络、CORS或Token配置异常 | 检查浏览器网络日志、Token有效期和OneNET接口可达性 |
 
 ---
 
 ## 关联项目
 
-- 主项目: [Ran-sh/WPT_PWM](https://github.com/Ran-sh/WPT_PWM) (分支 `ONENET`)
+- 主项目: [Ran-sh/WPT_PWM](https://github.com/Ran-sh/WPT_PWM)（分支 `5.0`）
 - 微信小程序: 主项目 `安卓app/` 目录
 - Railway 桥接 (历史): [Ran-sh/WPT_Railway](https://github.com/Ran-sh/WPT_Railway)
 

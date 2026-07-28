@@ -2,8 +2,11 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="wpt-version" content="V5.1.3">
+    <meta name="theme-color" content="#102832">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
     <title>WPT Monitor - 首页</title>
     <script src="js/auth-guard.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -46,7 +49,7 @@
             </a>
         </nav>
         <div class="p-4 border-t border-gray-100 absolute bottom-0 w-full bg-white">
-            <div class="text-xs text-center text-gray-400 font-medium">IoT PC Web v1.0</div>
+            <div class="text-xs text-center text-gray-400 font-medium">WPT Monitor V5.1.3</div>
         </div>
     </aside>
 
@@ -107,7 +110,7 @@
                 </div>
                 <div>
                     <h3 class="text-lg font-bold text-gray-900 tracking-tight">未配置云平台</h3>
-                    <p class="text-xs text-gray-400 font-bold tracking-wide mt-0.5">需要配置 OneNet 参数</p>
+                    <p class="text-xs text-gray-400 font-bold tracking-wide mt-0.5">需要配置 OneNET 参数</p>
                 </div>
             </div>
             
@@ -179,7 +182,11 @@
         renderDashboard();
 
         // 同步数据逻辑
+        let _indexSyncing = false;
+        let _indexRetryTimer = null;
         async function syncData() {
+            if (_indexSyncing || document.visibilityState === 'hidden') return;
+            _indexSyncing = true;
             const syncBtn = document.getElementById('syncBtn');
             const syncIcon = syncBtn.querySelector('i');
             const connIndicator = document.getElementById('connIndicator');
@@ -193,16 +200,21 @@
                     const data = await OneNetService.getLatestData();
                     if (data) {
                         updateUI(data);
-                        if (data._isOnline) {
+                        if (data._isMock) {
+                            connIndicator.className = 'w-2.5 h-2.5 bg-cyan-500 rounded-full mr-2 shadow-[0_0_8px_rgba(6,182,212,0.45)]';
+                            connStatus.innerText = '预览';
+                            connStatus.className = 'text-cyan-600 text-sm font-bold tracking-wide';
+                        } else if (data._isOnline) {
                             connIndicator.className = 'w-2.5 h-2.5 bg-[#22c55e] rounded-full mr-2 shadow-[0_0_8px_rgba(34,197,94,0.4)]';
-                            connStatus.innerText = '在线';
+                            var stateLabel = { RUNNING: '运行中', SWEEP: '扫频中', IDLE: '在线·待机' }[getWptState(data)] || '在线';
+                            connStatus.innerText = stateLabel;
                             connStatus.className = 'text-[#22c55e] text-sm font-bold tracking-wide';
                         } else {
                             connIndicator.className = 'w-2.5 h-2.5 bg-yellow-500 rounded-full mr-2 shadow-[0_0_8px_rgba(234,179,8,0.6)]';
                             connStatus.innerText = '离线';
                             connStatus.className = 'text-yellow-600 text-sm font-bold tracking-wide';
                         }
-                        /* _isOnline 为 undefined (Mock/未配置) 时进入 else 显示离线 */
+                        /* 未配置时明确显示预览，不将演示数据冒充设备在线。 */
                     } else {
                     }
                 }
@@ -211,8 +223,10 @@
                 connStatus.innerText = '连接失败';
                 connStatus.className = 'text-red-600 text-sm font-bold tracking-wide';
                 /* 同步失败后立即重试一次, 缩短恢复延迟 */
-                setTimeout(syncData, 2000);
+                clearTimeout(_indexRetryTimer);
+                _indexRetryTimer = setTimeout(syncData, 2000);
             } finally {
+                _indexSyncing = false;
                 setTimeout(() => {
                     syncIcon.classList.remove('fa-spin');
                     syncBtn.disabled = false;
@@ -227,7 +241,7 @@
             const checkAlert = (type, val, thresh, title, isHigh) => {
                 if (isFromCache || data._isMock || !data._isOnline) return;
 
-                let alarmStates = JSON.parse(localStorage.getItem('iot_alarm_states') || '{}');
+                let alarmStates = readLocalObject('iot_alarm_states');
                 const stateKey = `${type}_${isHigh ? 'high' : 'low'}`;
 
                 if (isHigh ? val > thresh : val < thresh) {
@@ -236,13 +250,13 @@
                     
                     if (alarmStates[stateKey]) return;
 
-                    let alerts = JSON.parse(localStorage.getItem('iot_alerts') || '[]');
+                    let alerts = readLocalArray('iot_alerts');
                     const lastAlert = alerts.find(a => a.title === title);
                     const now = new Date();
                     
                     if (!lastAlert || (now.getTime() - new Date(lastAlert.timestamp).getTime() > 5 * 60 * 1000)) {
                         alarmStates[stateKey] = true;
-                        localStorage.setItem('iot_alarm_states', JSON.stringify(alarmStates));
+                        writeLocalJSON('iot_alarm_states', alarmStates);
 
                         alerts.unshift({
                             id: Date.now(),
@@ -257,17 +271,18 @@
                             isCritical: true
                         });
                         if(alerts.length > 50) alerts.pop();
-                        localStorage.setItem('iot_alerts', JSON.stringify(alerts));
+                        writeLocalJSON('iot_alerts', alerts);
                     }
                 } else {
                     if (alarmStates[stateKey]) {
                         alarmStates[stateKey] = false;
-                        localStorage.setItem('iot_alarm_states', JSON.stringify(alarmStates));
+                        writeLocalJSON('iot_alarm_states', alarmStates);
                     }
                 }
             };
 
-            var isOffline = !(data && data._isOnline);
+            var isPreview = !!(data && data._isMock);
+            var isOffline = !(data && (data._isOnline || isPreview));
             currentModel.sensors.forEach(s => {
                 var valEl = document.getElementById(`sensor-val-${s.id}`);
                 var statusEl = document.getElementById(`sensor-status-${s.id}`);
@@ -280,19 +295,24 @@
                     var decimals = typeof getDecimals === 'function' ? getDecimals(s.dataType, s.step) : 1;
                     var val = Number(data[s.id]).toFixed(decimals);
                     if (valEl) valEl.innerText = val;
+                    var numericVal = Number(val);
+                    var isNormal = typeof isSensorValueNormal === 'function'
+                        ? isSensorValueNormal(s, numericVal, data)
+                        : numericVal >= s.min && numericVal <= s.max;
+                    if (!isNormal) {
+                        checkAlert(s.id, numericVal, numericVal > s.max ? s.max : s.min,
+                            `${s.name}${numericVal > s.max ? '过高' : '过低'}报警`, numericVal > s.max);
+                    }
                     if (statusEl) {
-                        var isAlert = false;
-                        var numericVal = Number(val);
-                        if (numericVal > s.max) {
-                            isAlert = true;
+                        if (s.id === 'freq' && numericVal === 0 && getWptState(data) === 'IDLE') {
+                            statusEl.innerText = '待机';
+                            statusEl.className = 'text-xs font-bold text-gray-500 bg-gray-50 px-3 py-1 rounded-lg border border-gray-200';
+                        } else if (numericVal > s.max) {
                             statusEl.innerText = '过高';
                             statusEl.className = 'text-xs font-bold text-red-600 bg-red-50 px-3 py-1 rounded-lg border border-red-200';
-                            checkAlert(s.id, numericVal, s.max, `${s.name}过高报警`, true);
                         } else if (numericVal < s.min) {
-                            isAlert = true;
                             statusEl.innerText = '过低';
                             statusEl.className = 'text-xs font-bold text-red-600 bg-red-50 px-3 py-1 rounded-lg border border-red-200';
-                            checkAlert(s.id, numericVal, s.min, `${s.name}过低报警`, false);
                         } else {
                             statusEl.innerText = '正常';
                             statusEl.className = 'text-xs font-bold text-green-600 bg-green-50 px-3 py-1 rounded-lg border border-green-200';
@@ -316,7 +336,10 @@
                         statusEl.className = `text-xs font-bold px-3 py-1 rounded-full tracking-wide border mr-3 ${colors.text} ${colors.bg} ${colors.border}`;
                     } else {
                         var isOn = !!data[c.id];
-                        statusEl.innerText = isOn ? '已开启' : '已关闭';
+                        var wptState = typeof getWptState === 'function' ? getWptState(data) : (isOn ? 'RUNNING' : 'IDLE');
+                        statusEl.innerText = c.id === 'switch'
+                            ? ({ RUNNING: '运行中', SWEEP: '扫频中', IDLE: '已停止', PREVIEW: '演示' }[wptState] || '已停止')
+                            : (isOn ? '已开启' : '已关闭');
                         var cColors = COLOR_CLASSES[c.color] || COLOR_CLASSES['slate'];
                         statusEl.className = `text-xs font-bold px-3 py-1 rounded-full tracking-wide border mr-3 ${isOn ? `${cColors.text} ${cColors.bg} ${cColors.border}` : 'text-gray-500 bg-gray-50 border-gray-200/50'}`;
                     }
@@ -340,7 +363,7 @@
                 loadDashboardTitle();
                 const newModelStr = localStorage.getItem('iot_data_model');
                 if (newModelStr && JSON.stringify(currentModel) !== newModelStr) {
-                    currentModel = JSON.parse(newModelStr);
+                    currentModel = getDataModel();
                     renderDashboard(); // Re-render completely with new model
                     syncData(); // Fetch fresh data for the new model
                 }
@@ -355,7 +378,7 @@
 
         // Check OneNet config on startup
         function checkOneNetConfig() {
-            const config = JSON.parse(localStorage.getItem('iot_onenet_config') || 'null');
+            const config = readLocalJSON('iot_onenet_config', null);
             if (!config || !config.productId || !config.deviceName || !config.token) {
                 const connIndicator = document.getElementById('connIndicator');
                 const connStatus = document.getElementById('connStatus');
@@ -394,14 +417,26 @@
             window.location.href = '/settings';
         }
 
-        if(checkOneNetConfig() !== false) {
-            setTimeout(syncData, 500);
-            /* 轮询: 5s 间隔, 失败立即重试一次 (2000ms) */
-            var _pollTimer = setInterval(function() {
-                syncData().catch(function() { setTimeout(syncData, 2000); });
-            }, 5000);
-            window.addEventListener('pagehide', function() { clearInterval(_pollTimer); });
+        var _pollTimer = null;
+        var _oneNetConfigured = checkOneNetConfig() !== false;
+        function stopIndexPolling() {
+            clearInterval(_pollTimer);
+            clearTimeout(_indexRetryTimer);
+            _pollTimer = null;
+            _indexRetryTimer = null;
         }
+        function startIndexPolling() {
+            if (_pollTimer || document.visibilityState === 'hidden') return;
+            setTimeout(syncData, 500);
+            if (!_oneNetConfigured) return;
+            _pollTimer = setInterval(syncData, 5000);
+        }
+        startIndexPolling();
+        window.addEventListener('pagehide', stopIndexPolling);
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'hidden') stopIndexPolling();
+            else startIndexPolling();
+        });
     </script>
     </div>
 

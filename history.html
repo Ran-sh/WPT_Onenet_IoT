@@ -2,12 +2,15 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="wpt-version" content="V5.1.3">
     <title>WPT Monitor - 历史查询</title>
     <script src="js/auth-guard.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <meta name="theme-color" content="#102832">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="css/dashboard-v5.css">
     <script src="js/config.js"></script>
@@ -51,7 +54,7 @@
             </a>
         </nav>
         <div class="p-4 border-t border-gray-100 absolute bottom-0 w-full bg-white">
-            <div class="text-xs text-center text-gray-400 font-medium">IoT PC Web v1.0</div>
+            <div class="text-xs text-center text-gray-400 font-medium">WPT Monitor V5.1.3</div>
         </div>
     </aside>
 
@@ -163,8 +166,15 @@
             }, 2500);
         }
 
+        function toCsvCell(value) {
+            let cell = value === undefined || value === null ? '' : String(value);
+            /* 避免导出的CSV在表格软件中被解释为公式。 */
+            if (/^[=+\-@]/.test(cell)) cell = "'" + cell;
+            return '"' + cell.replace(/"/g, '""') + '"';
+        }
+
         function exportHistoryData() {
-            let historyData = JSON.parse(localStorage.getItem('iot_history_data') || '[]');
+            let historyData = readLocalArray('iot_history_data').filter(item => item && typeof item === 'object' && item.data && typeof item.data === 'object');
             
             // Filter for the last 24 hours to match the UI
             const now = new Date();
@@ -172,7 +182,7 @@
             const displayData = historyData.filter(item => {
                 let itemTime = item.timestamp;
                 if (!itemTime && item.fullTime) {
-                    itemTime = new Date(item.fullTime.replace(/-/g, '/')).getTime();
+                    itemTime = new Date(String(item.fullTime).replace(/-/g, '/')).getTime();
                 }
                 return itemTime >= twentyFourHoursAgo;
             });
@@ -189,24 +199,19 @@
                 // Build Headers
                 const headers = ['记录时间', '完整时间'];
                 sensors.forEach(s => {
-                    const colName = `${s.name}(${s.unit})`.replace(/"/g, '""');
-                    headers.push(`"${colName}"`);
+                    headers.push(toCsvCell(`${s.name}(${s.unit})`));
                 });
                 csvContent += headers.join(',') + '\n';
 
                 // Build Rows
                 displayData.forEach(item => {
                     const row = [
-                        item.time || '',
-                        item.fullTime || ''
+                        toCsvCell(item.time || ''),
+                        toCsvCell(item.fullTime || '')
                     ];
                     sensors.forEach(s => {
                         const val = item.data[s.id];
-                        let cell = val !== undefined && val !== null ? String(val) : '';
-                        if (cell.includes(',') || cell.includes('"') || cell.includes('\n')) {
-                            cell = '"' + cell.replace(/"/g, '""') + '"';
-                        }
-                        row.push(cell);
+                        row.push(toCsvCell(val));
                     });
                     csvContent += row.join(',') + '\n';
                 });
@@ -227,6 +232,7 @@
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
                     
                     showToast('导出成功');
                 }
@@ -255,7 +261,7 @@
         }
 
         function loadData() {
-            let historyData = JSON.parse(localStorage.getItem('iot_history_data') || '[]');
+            let historyData = readLocalArray('iot_history_data').filter(item => item && typeof item === 'object' && item.data && typeof item.data === 'object');
             
             const now = new Date();
             const twentyFourHoursAgo = now.getTime() - (24 * 60 * 60 * 1000);
@@ -263,13 +269,13 @@
             const displayData = historyData.filter(item => {
                 let itemTime = item.timestamp;
                 if (!itemTime && item.fullTime) {
-                    itemTime = new Date(item.fullTime.replace(/-/g, '/')).getTime();
+                    itemTime = new Date(String(item.fullTime).replace(/-/g, '/')).getTime();
                 }
                 return itemTime >= twentyFourHoursAgo;
             });
 
-            labels = displayData.map(item => item.time);
-            fullTimes = displayData.map(item => item.fullTime);
+            labels = displayData.map(item => String(item.time || '').slice(0, 16));
+            fullTimes = displayData.map(item => String(item.fullTime || '').slice(0, 32));
             
             if (labels.length === 0) {
                 labels.push(`${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`);
@@ -277,7 +283,10 @@
             }
 
             sensors.forEach(s => {
-                let dataArr = displayData.map(item => item.data[s.id] !== undefined ? item.data[s.id] : null);
+                let dataArr = displayData.map(item => {
+                    const value = Number(item.data[s.id]);
+                    return Number.isFinite(value) ? value : null;
+                });
                 if (dataArr.length === 0) dataArr.push(null);
 
                 const vals = dataArr.filter(v => v !== null);
@@ -405,8 +414,8 @@
                 <tr class="hover:bg-gray-50 transition-colors hist-row">
                     <td class="px-2 lg:px-6 py-1.5 text-center align-middle hist-time">
                         <div class="flex flex-col items-center leading-tight">
-                            <span class="text-[9px] lg:text-xs text-gray-400 font-mono">${dateStr}</span>
-                            <span class="text-[10px] lg:text-sm text-gray-500 font-mono">${timeStr}</span>
+                            <span class="text-[9px] lg:text-xs text-gray-400 font-mono">${escapeHtml(dateStr)}</span>
+                            <span class="text-[10px] lg:text-sm text-gray-500 font-mono">${escapeHtml(timeStr)}</span>
                         </div>
                     </td>
                     <td class="px-2 lg:px-6 py-1.5 text-center">
@@ -458,13 +467,22 @@
             updateTabStyles(metricKey);
         }
 
+        var _histPolling = false;
+        var _histTimer = null;
         async function syncData() {
+            if (_histPolling || document.visibilityState === 'hidden') return;
+            _histPolling = true;
             try {
                 if (typeof OneNetService !== 'undefined') {
                     const data = await OneNetService.getLatestData();
                     if (data) {
                         const deviceStatusEl = document.getElementById('deviceStatus');
-                        if (data._isOnline === false) {
+                        deviceStatusEl.classList.remove('text-yellow-600', 'text-green-500', 'text-cyan-600', 'text-red-500');
+                        if (data._isMock) {
+                            deviceStatusEl.classList.remove('hidden');
+                            deviceStatusEl.innerHTML = '<span class="w-1.5 h-1.5 bg-cyan-500 rounded-full mr-1"></span> 预览模式，无在线历史';
+                            deviceStatusEl.classList.add('text-cyan-600');
+                        } else if (data._isOnline === false) {
                             deviceStatusEl.classList.remove('hidden');
                             deviceStatusEl.innerHTML = '<span class="w-1.5 h-1.5 bg-yellow-500 rounded-full mr-1 shadow-[0_0_4px_rgba(234,179,8,0.8)]"></span> 设备已离线';
                             deviceStatusEl.classList.add('text-yellow-600');
@@ -496,21 +514,39 @@
                         renderTable(currentMetric);
                     }
                 }
-            } catch (error) {}
+            } catch (error) {
+                const deviceStatusEl = document.getElementById('deviceStatus');
+                if (deviceStatusEl) {
+                    deviceStatusEl.classList.remove('hidden', 'text-yellow-600', 'text-green-500', 'text-cyan-600');
+                    deviceStatusEl.classList.add('text-red-500');
+                    deviceStatusEl.textContent = '数据同步失败';
+                }
+            } finally {
+                _histPolling = false;
+            }
         }
 
         initChart();
-        var _histPolling = false;
-        var _histTimer = setInterval(function() { if (_histPolling) return; _histPolling = true; syncData().finally(function() { _histPolling = false; }); }, 30000);
-        window.addEventListener('pagehide', function() { clearInterval(_histTimer); });
+        function stopHistoryPolling() {
+            clearInterval(_histTimer);
+            _histTimer = null;
+        }
+        function startHistoryPolling() {
+            if (_histTimer || document.visibilityState === 'hidden') return;
+            syncData();
+            _histTimer = setInterval(syncData, 30000);
+        }
+        startHistoryPolling();
+        window.addEventListener('pagehide', stopHistoryPolling);
 
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
+                startHistoryPolling();
                 const newModelStr = localStorage.getItem('iot_data_model');
                 if (newModelStr && JSON.stringify(currentModel) !== newModelStr) {
                     window.location.reload(); // Simple reload handles chart re-init easily
                 }
-            }
+            } else stopHistoryPolling();
         });
     </script>
     </div>

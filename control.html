@@ -2,8 +2,11 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="wpt-version" content="V5.1.3">
+    <meta name="theme-color" content="#102832">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
     <title>WPT Monitor - 设备控制</title>
     <script src="js/auth-guard.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -67,7 +70,7 @@
             </a>
         </nav>
         <div class="p-4 border-t border-gray-100 absolute bottom-0 w-full bg-white">
-            <div class="text-xs text-center text-gray-400 font-medium">IoT PC Web v1.0</div>
+            <div class="text-xs text-center text-gray-400 font-medium">WPT Monitor V5.1.3</div>
         </div>
     </aside>
 
@@ -147,7 +150,11 @@
         const currentModel = getDataModel();
         const controls = currentModel.controls;
         
-        let operationLogs = JSON.parse(localStorage.getItem('iot_operation_logs') || '[]');
+        let operationLogs = readLocalArray('iot_operation_logs').filter(log => log && typeof log === 'object').slice(0, 20).map(log => ({
+            device: /^[A-Za-z][A-Za-z0-9_]*$/.test(String(log.device || '')) ? String(log.device) : 'unknown',
+            status: typeof log.status === 'boolean' ? log.status : String(log.status ?? '').slice(0, 80),
+            time: String(log.time || '--').slice(0, 32)
+        }));
 
         function initUI() {
             const container = document.getElementById('controlsContainer');
@@ -222,12 +229,12 @@
                 <tr class="hover:bg-gray-50 transition-colors">
                     <td class="px-1 lg:px-6 py-1.5 text-center align-middle">
                         <div class="flex flex-col items-center leading-tight">
-                            <span class="text-[9px] lg:text-xs text-gray-400 font-mono">${log.time.slice(0, 10)}</span>
-                            <span class="text-[10px] lg:text-xs text-gray-500 font-mono">${log.time.slice(-8)}</span>
+                            <span class="text-[9px] lg:text-xs text-gray-400 font-mono">${escapeHtml(log.time.slice(0, 10))}</span>
+                            <span class="text-[10px] lg:text-xs text-gray-500 font-mono">${escapeHtml(log.time.slice(-8))}</span>
                         </div>
                     </td>
-                    <td class="px-1 lg:px-6 py-1.5 text-[10px] lg:text-xs font-medium text-gray-700 text-center">${actionText}</td>
-                    <td class="px-1 lg:px-6 py-1.5 text-[10px] lg:text-xs text-gray-600 text-center">${deviceNames[log.device] || log.device}</td>
+                    <td class="px-1 lg:px-6 py-1.5 text-[10px] lg:text-xs font-medium text-gray-700 text-center">${escapeHtml(String(actionText))}</td>
+                    <td class="px-1 lg:px-6 py-1.5 text-[10px] lg:text-xs text-gray-600 text-center">${escapeHtml(String(deviceNames[log.device] || log.device || '未知'))}</td>
                     <td class="px-1 lg:px-6 py-1.5 text-center"><span class="text-[10px] lg:text-xs text-green-600">成功</span></td>
                 </tr>
                 `;
@@ -240,7 +247,7 @@
             
             operationLogs.unshift({ device, status, time: timeStr });
             if (operationLogs.length > 20) operationLogs.pop();
-            localStorage.setItem('iot_operation_logs', JSON.stringify(operationLogs));
+            writeLocalJSON('iot_operation_logs', operationLogs);
             renderLogs();
         }
         
@@ -285,6 +292,15 @@
                 showToast('请输入有效数字');
                 return;
             }
+            if (id === 'setfreq') {
+                const validLow = value >= 20 && value < 100 && Math.abs(value * 10 - Math.round(value * 10)) < 1e-7;
+                const validHigh = value >= 100 && value <= 200 && Number.isInteger(value);
+                if (!validLow && !validHigh) {
+                    showToast('20.0–99.9kHz 按0.1步进，100–200kHz 按1步进');
+                    input.focus();
+                    return;
+                }
+            }
             await sendControlCommand(id, value);
         }
 
@@ -314,6 +330,11 @@
         async function sendControlCommand(id, value) {
             try {
                 if (typeof OneNetService !== 'undefined') {
+                    const config = getOneNetConfig();
+                    if (!config.TOKEN || !config.PRODUCT_ID || !config.DEVICE_NAME) {
+                        showToast('请先在设置页完成 OneNET 配置');
+                        return false;
+                    }
                     const params = {};
                     params[id] = value;
                     
@@ -355,7 +376,11 @@
             }, 2000);
         }
 
+        let _controlSyncing = false;
+        let _controlRetryTimer = null;
         async function syncStatus() {
+            if (_controlSyncing || document.visibilityState === 'hidden') return;
+            _controlSyncing = true;
             const icon = document.querySelector('#syncBtn2 i');
             const connIndicator = document.getElementById('connIndicator');
             const connStatus = document.getElementById('connStatus');
@@ -364,7 +389,12 @@
                 if (typeof OneNetService !== 'undefined') {
                     const data = await OneNetService.getLatestData();
                     if (data) {
-                        if (!data._isOnline) {
+                        if (data._isMock) {
+                            connIndicator.className = 'w-2.5 h-2.5 bg-cyan-500 rounded-full mr-2 shadow-[0_0_8px_rgba(6,182,212,0.45)]';
+                            connStatus.innerText = '预览·不可控制';
+                            connStatus.className = 'text-cyan-600 text-xs font-bold tracking-wide';
+                            return;
+                        } else if (!data._isOnline) {
                             connIndicator.className = 'w-2.5 h-2.5 bg-yellow-500 rounded-full mr-2 shadow-[0_0_8px_rgba(234,179,8,0.6)]';
                             connStatus.innerText = '离线';
                             connStatus.className = 'text-yellow-600 text-xs font-bold tracking-wide';
@@ -375,7 +405,6 @@
                                 const inp = document.getElementById('input-setfreq');
                                 if (inp && document.activeElement !== inp) inp.value = 100;
                             }
-                            if (icon) setTimeout(() => icon.classList.remove('fa-spin'), 800);
                             return; /* 跳过 controls.forEach, 不写 API 旧数据 */
                         }
                         /* 在线 */
@@ -412,24 +441,36 @@
                 connStatus.innerText = '连接失败';
                 connStatus.className = 'text-red-600 text-xs font-bold tracking-wide';
                 /* 同步失败后立即重试一次, 缩短恢复延迟 */
-                setTimeout(syncStatus, 2000);
+                clearTimeout(_controlRetryTimer);
+                _controlRetryTimer = setTimeout(syncStatus, 2000);
+            } finally {
+                _controlSyncing = false;
+                if (icon) setTimeout(() => icon.classList.remove('fa-spin'), 800);
             }
-            if (icon) setTimeout(() => icon.classList.remove('fa-spin'), 800);
         }
 
         /* 使用 'load' 事件 + 去重标志, 防止 onload+fallback 重复注册两次 setInterval */
         let _controlSyncStarted = false;
         let _ctrlSyncTimer = null;
         function _startControlSync() {
-            if (_controlSyncStarted) return;
+            if (_controlSyncStarted || document.visibilityState === 'hidden') return;
             _controlSyncStarted = true;
             setTimeout(syncStatus, 500);
             _ctrlSyncTimer = setInterval(syncStatus, 5000);
-            window.addEventListener('pagehide', function() {
-                clearInterval(_ctrlSyncTimer); _controlSyncStarted = false;
-            });
+        }
+        function _stopControlSync() {
+            clearInterval(_ctrlSyncTimer);
+            clearTimeout(_controlRetryTimer);
+            _ctrlSyncTimer = null;
+            _controlRetryTimer = null;
+            _controlSyncStarted = false;
         }
         window.addEventListener('load', _startControlSync);
+        window.addEventListener('pagehide', _stopControlSync);
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'hidden') _stopControlSync();
+            else _startControlSync();
+        });
         /* 初始化: 渲染 UI + 填充缓存 + 启动同步 */
         {
             initUI();
@@ -476,6 +517,7 @@
         }
         if (document.readyState === 'complete' && !_controlSyncStarted) {
             _startControlSync();
+        }
         }
     </script>
     </div>

@@ -2,8 +2,11 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="wpt-version" content="V5.1.3">
+    <meta name="theme-color" content="#102832">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
     <title>WPT Monitor - 设置</title>
     <script src="js/auth-guard.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -69,7 +72,7 @@
             </a>
         </nav>
         <div class="p-4 border-t border-gray-100 absolute bottom-0 w-full bg-white">
-            <div class="text-xs text-center text-gray-400 font-medium">IoT PC Web v1.0</div>
+            <div class="text-xs text-center text-gray-400 font-medium">WPT Monitor V5.1.3</div>
         </div>
     </aside>
 
@@ -84,7 +87,7 @@
         <div class="flex items-center space-x-2 lg:space-x-4">
             <div class="flex items-center bg-blue-50 px-3 py-1.5 rounded-full border border-blue-100">
                 <div class="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                <span class="text-xs font-bold text-blue-600">超级管理员</span>
+                <span class="text-xs font-bold text-blue-600">本地管理员</span>
             </div>
             <div class="h-4 w-[1px] bg-gray-300 hidden lg:block"></div>
             <button onclick="logout()" class="flex items-center space-x-2 text-gray-500 hover:text-red-500 transition-colors font-medium text-sm">
@@ -163,11 +166,20 @@
                                     <i class="fas fa-cloud text-indigo-500 text-sm"></i>
                                 </div>
                                 <div>
-                                    <span class="block text-base font-bold text-gray-800 tracking-wide">OneNet 平台配置</span>
+                                    <span class="block text-base font-bold text-gray-800 tracking-wide">OneNET 平台配置</span>
                                     <span id="onenetStatusText" class="block text-sm text-gray-400 mt-0.5">未配置，点击后按提示填写即可连接云平台</span>
                                 </div>
                             </div>
                             <i class="fas fa-chevron-right text-gray-300 text-xs ml-3 flex-shrink-0"></i>
+                        </div>
+                    </div>
+                    <div class="px-4 lg:px-10 py-4 lg:py-5 flex items-start gap-3 bg-amber-50/40">
+                        <div class="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-shield-alt text-amber-600 text-sm"></i>
+                        </div>
+                        <div>
+                            <span class="block text-sm font-bold text-gray-800">登录保护说明</span>
+                            <span class="block text-xs text-gray-500 mt-1 leading-relaxed">当前登录仅阻止普通页面误入，不是服务器鉴权。公网部署应在 Cloudflare 中启用 Access，OneNET Token 只保存在可信设备。</span>
                         </div>
                     </div>
                     <div class="px-10 py-5 flex items-center justify-between active:bg-gray-50 transition cursor-pointer" onclick="clearCache()">
@@ -253,7 +265,7 @@
                     <input type="text" id="dmName" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-800 text-sm focus:outline-none focus:border-blue-500">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-gray-500 mb-1">OneNet 云端标识符 (如 co2_value)</label>
+                    <label class="block text-xs font-bold text-gray-500 mb-1">OneNET 云端标识符 (如 co2_value)</label>
                     <input type="text" id="dmCloudKey" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-800 text-sm font-mono focus:outline-none focus:border-blue-500">
                 </div>
                 
@@ -329,13 +341,13 @@
         <div class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity opacity-0" id="onenetModalBackdrop" onclick="closeOneNetConfigModal()"></div>
         <div class="bg-white rounded-2xl w-full max-w-md flex flex-col shadow-2xl z-10 transform scale-95 opacity-0 transition-all duration-200" id="onenetModalContent">
             <div class="p-6 pb-4 border-b border-gray-100">
-                <h3 class="text-lg font-bold text-gray-900 mb-1 tracking-tight">OneNet 平台配置</h3>
-                <p class="text-sm text-gray-400 font-bold tracking-wide">在 OneNet 控制台创建产品与设备后，将以下信息完整复制到这里即可。</p>
+                <h3 class="text-lg font-bold text-gray-900 mb-1 tracking-tight">OneNET 平台配置</h3>
+                <p class="text-sm text-gray-400 font-bold tracking-wide">在 OneNET 控制台创建产品与设备后，将以下信息完整复制到这里即可。</p>
             </div>
             <div class="p-6 space-y-4">
                 <div>
                     <label class="block text-sm font-bold text-gray-500 mb-1.5">产品 ID (Product ID)</label>
-                    <p class="text-xs text-gray-400 mb-1">来自 OneNet 控制台“产品管理”页面，例如：abc123。</p>
+                    <p class="text-xs text-gray-400 mb-1">来自 OneNET 控制台“产品管理”页面，例如：abc123。</p>
                     <input type="text" id="configProductId" placeholder="例如：abc123" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-gray-800 text-base focus:outline-none focus:border-indigo-500">
                 </div>
                 <div>
@@ -346,7 +358,12 @@
                 <div>
                     <label class="block text-sm font-bold text-gray-500 mb-1.5">鉴权 Token (Authorization)</label>
                     <p class="text-xs text-gray-400 mb-1">在设备详情页生成或复制完整 Token，包含签名与有效期信息。</p>
-                    <textarea id="configToken" rows="3" placeholder="粘贴从 OneNet 控制台复制的完整鉴权 Token" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-gray-800 text-sm font-mono focus:outline-none focus:border-indigo-500 break-all"></textarea>
+                    <div class="relative">
+                        <input type="password" id="configToken" autocomplete="off" spellcheck="false" placeholder="粘贴从 OneNET 控制台复制的完整鉴权 Token" class="w-full bg-gray-50 border border-gray-200 rounded-xl pl-3.5 pr-12 py-2.5 text-gray-800 text-sm font-mono focus:outline-none focus:border-indigo-500">
+                        <button type="button" onclick="toggleTokenVisibility()" aria-label="显示或隐藏 Token" class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50">
+                            <i id="tokenVisibilityIcon" class="fas fa-eye"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
             <div class="p-6 pt-0 flex space-x-3">
@@ -420,14 +437,14 @@
             renderDeviceList();
             renderIconPicker();
             
-            let config = JSON.parse(localStorage.getItem('iot_config') || '{}');
+            let config = readLocalObject('iot_config');
             const soundToggle = document.getElementById('toggle-sound');
             if (config.soundAlert !== undefined) soundToggle.checked = config.soundAlert;
             updateToggleUI(soundToggle);
             
             document.getElementById('dashboardTitleInput').value = localStorage.getItem('iot_dashboard_title') || 'WPT Monitor';
             
-            const onenetConfig = JSON.parse(localStorage.getItem('iot_onenet_config') || 'null');
+            const onenetConfig = readLocalJSON('iot_onenet_config', null);
             const statusEl = document.getElementById('onenetStatusText');
             if (statusEl) {
                 if (onenetConfig && onenetConfig.productId && onenetConfig.deviceName) {
@@ -448,7 +465,7 @@
 
         function saveDashboardTitle() {
             const input = document.getElementById('dashboardTitleInput');
-            const newTitle = input.value.trim();
+            const newTitle = input.value.trim().slice(0, 40);
             if (newTitle) {
                 localStorage.setItem('iot_dashboard_title', newTitle);
                 showToast('标题已保存，返回首页即可查看');
@@ -472,9 +489,9 @@
 
         document.getElementById('toggle-sound').addEventListener('change', function() {
             updateToggleUI(this);
-            let config = JSON.parse(localStorage.getItem('iot_config') || '{}');
+            let config = readLocalObject('iot_config');
             config.soundAlert = this.checked;
-            localStorage.setItem('iot_config', JSON.stringify(config));
+            writeLocalJSON('iot_config', config);
             showToast(this.checked ? '警报音已开启' : '警报音已关闭');
         });
 
@@ -562,6 +579,9 @@
             
             document.getElementById('dmDataType').value = type === 'sensor' ? 'float' : 'bool';
             document.getElementById('dmStep').value = '1';
+            document.getElementById('dmStep').dataset.locked = '0';
+            document.getElementById('dmMin').disabled = false;
+            document.getElementById('dmMax').disabled = false;
             
             if (type === 'sensor') {
                 document.getElementById('dmSensorFields').classList.remove('hidden');
@@ -584,7 +604,8 @@
             document.getElementById('dmType').value = type;
             document.getElementById('dmOriginalId').value = id;
             document.getElementById('dmTitle').innerText = '编辑设备';
-            document.getElementById('dmDeleteBtn').classList.remove('hidden');
+            const isCoreItem = ['voltage', 'current', 'freq', 'switch', 'setfreq'].indexOf(id) >= 0;
+            document.getElementById('dmDeleteBtn').classList.toggle('hidden', isCoreItem);
             
             document.getElementById('dmId').value = device.id;
             document.getElementById('dmId').disabled = true; // Prevent changing ID of existing
@@ -597,12 +618,16 @@
             
             document.getElementById('dmDataType').value = device.dataType || (type === 'sensor' ? 'float' : 'bool');
             document.getElementById('dmStep').value = device.step || '1';
+            const safetyLocked = ['current', 'freq', 'setfreq'].indexOf(id) >= 0;
+            document.getElementById('dmStep').dataset.locked = safetyLocked ? '1' : '0';
             
             if (type === 'sensor') {
                 document.getElementById('dmSensorFields').classList.remove('hidden');
                 document.getElementById('dmUnit').value = device.unit;
                 document.getElementById('dmMin').value = device.min;
                 document.getElementById('dmMax').value = device.max;
+                document.getElementById('dmMin').disabled = safetyLocked;
+                document.getElementById('dmMax').disabled = safetyLocked;
             } else {
                 document.getElementById('dmSensorFields').classList.add('hidden');
             }
@@ -614,6 +639,11 @@
         function toggleStepInput() {
             const type = document.getElementById('dmDataType').value;
             const stepInput = document.getElementById('dmStep');
+            if (stepInput.dataset.locked === '1') {
+                stepInput.disabled = true;
+                stepInput.classList.add('bg-gray-100', 'text-gray-400');
+                return;
+            }
             if (type === 'int32' || type === 'float' || type === 'double') {
                 stepInput.disabled = false;
                 stepInput.classList.remove('bg-gray-100', 'text-gray-400');
@@ -629,25 +659,43 @@
             const originalId = document.getElementById('dmOriginalId').value;
             const id = document.getElementById('dmId').value.trim();
             
-            if (!id || !/^[a-zA-Z0-9_]+$/.test(id)) {
-                alert('内部ID必须为英文字母、数字或下划线');
+            if (!id || !/^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(id)) {
+                showToast('内部ID需以字母开头，仅含字母、数字或下划线');
                 return;
             }
 
+            if (currentModel.sensors.length + currentModel.controls.length >= MAX_MODEL_ITEMS * 2 && !originalId) {
+                showToast('数据模型项目数量已达到上限');
+                return;
+            }
+
+            const cloudKey = document.getElementById('dmCloudKey').value.trim() || id;
+            if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(cloudKey)) {
+                showToast('云端标识符需以字母开头，仅含字母、数字或下划线');
+                return;
+            }
+
+            const stepValue = Number(document.getElementById('dmStep').value);
             const device = {
                 id: id,
-                name: document.getElementById('dmName').value.trim() || '未命名',
-                cloudKey: document.getElementById('dmCloudKey').value.trim() || id,
+                name: (document.getElementById('dmName').value.trim() || '未命名').slice(0, 40),
+                cloudKey: cloudKey,
                 icon: document.getElementById('dmIcon').value.trim() || (type === 'sensor' ? 'fa-microchip' : 'fa-plug'),
                 color: document.getElementById('dmColor').value,
                 dataType: document.getElementById('dmDataType').value,
-                step: parseFloat(document.getElementById('dmStep').value) || 1
+                step: Number.isFinite(stepValue) && stepValue > 0 ? stepValue : 1
             };
 
             if (type === 'sensor') {
-                device.unit = document.getElementById('dmUnit').value.trim();
-                device.min = parseFloat(document.getElementById('dmMin').value) || 0;
-                device.max = parseFloat(document.getElementById('dmMax').value) || 100;
+                const minValue = Number(document.getElementById('dmMin').value);
+                const maxValue = Number(document.getElementById('dmMax').value);
+                if (!Number.isFinite(minValue) || !Number.isFinite(maxValue) || minValue >= maxValue) {
+                    showToast('最小值必须小于最大值');
+                    return;
+                }
+                device.unit = document.getElementById('dmUnit').value.trim().slice(0, 12);
+                device.min = minValue;
+                device.max = maxValue;
             }
 
             const list = type === 'sensor' ? currentModel.sensors : currentModel.controls;
@@ -657,13 +705,17 @@
                 if (idx !== -1) list[idx] = device;
             } else {
                 if (currentModel.sensors.find(d => d.id === id) || currentModel.controls.find(d => d.id === id)) {
-                    alert('ID已存在，请使用其他ID');
+                    showToast('ID已存在，请使用其他ID');
                     return;
                 }
                 list.push(device);
             }
 
-            saveDataModel(currentModel);
+            if (!saveDataModel(currentModel)) {
+                showToast('保存失败：浏览器存储空间不可用');
+                return;
+            }
+            currentModel = normalizeDataModel(currentModel);
             localStorage.removeItem('iot_latest_data'); // 清除缓存强制拉取最新配置数据
             renderDeviceList();
             closeDeviceModal();
@@ -671,6 +723,11 @@
         }
 
         function deleteCurrentDevice() {
+            const protectedId = document.getElementById('dmOriginalId').value;
+            if (['voltage', 'current', 'freq', 'switch', 'setfreq'].indexOf(protectedId) >= 0) {
+                showToast('固件核心数据项不可删除，只能调整显示信息');
+                return;
+            }
             showConfirm(
                 '删除设备',
                 '确定要删除此设备吗？相关的UI卡片和历史数据将不再显示。',
@@ -698,7 +755,7 @@
 
         // --- OneNet Modal ---
         function openOneNetConfigModal() {
-            const userConfig = JSON.parse(localStorage.getItem('iot_onenet_config') || 'null');
+            const userConfig = readLocalJSON('iot_onenet_config', null);
             if (userConfig) {
                 document.getElementById('configProductId').value = userConfig.productId || '';
                 document.getElementById('configDeviceName').value = userConfig.deviceName || '';
@@ -709,14 +766,32 @@
 
         function closeOneNetConfigModal() { hideModal('onenetModal', 'onenetModalBackdrop', 'onenetModalContent'); }
 
+        function toggleTokenVisibility() {
+            const input = document.getElementById('configToken');
+            const icon = document.getElementById('tokenVisibilityIcon');
+            input.type = input.type === 'password' ? 'text' : 'password';
+            icon.className = input.type === 'password' ? 'fas fa-eye' : 'fas fa-eye-slash';
+        }
+
         function saveOneNetConfigModal() {
             const productId = document.getElementById('configProductId').value.trim();
             const deviceName = document.getElementById('configDeviceName').value.trim();
             const token = document.getElementById('configToken').value.trim();
             
-            if (!productId || !deviceName || !token) { alert('请填写完整'); return; }
+            if (!productId || !deviceName || !token) { showToast('请完整填写产品ID、设备名称和Token'); return; }
+            if (productId.length > 64 || deviceName.length > 128 || token.length > 2048) {
+                showToast('配置内容长度异常，请检查后重试');
+                return;
+            }
+            if (token.indexOf('res=') < 0 || token.indexOf('sign=') < 0 || token.indexOf('et=') < 0) {
+                showToast('Token 格式不完整，请复制完整鉴权 Token');
+                return;
+            }
             
-            localStorage.setItem('iot_onenet_config', JSON.stringify({ productId, deviceName, token }));
+            if (!writeLocalJSON('iot_onenet_config', { productId, deviceName, token })) {
+                showToast('保存失败：浏览器存储空间不可用');
+                return;
+            }
             // 清除旧的设备缓存和报警，避免串台
             localStorage.removeItem('iot_latest_data');
             localStorage.removeItem('iot_history_data');
@@ -782,6 +857,7 @@
                 'bg-red-500 hover:bg-red-600',
                 () => {
                     localStorage.removeItem('lastLoginTime');
+                    localStorage.removeItem('wpt_persistent_auth');
                     sessionStorage.removeItem('wpt_session_auth');
                     window.location.href = 'login.html';
                 }

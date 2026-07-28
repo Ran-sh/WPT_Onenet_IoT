@@ -2,12 +2,31 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
+const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const pages = ['index', 'monitoring', 'control', 'history', 'alerts', 'settings', 'login'];
 
 function read(relativePath) {
   return fs.readFileSync(path.join(root, relativePath), 'utf8');
+}
+
+function loadWebModules(initialStorage = {}) {
+  const storage = new Map(Object.entries(initialStorage));
+  const context = {
+    localStorage: {
+      getItem: (key) => storage.has(key) ? storage.get(key) : null,
+      setItem: (key, value) => storage.set(key, String(value)),
+      removeItem: (key) => storage.delete(key)
+    },
+    document: { createElement: () => ({ textContent: '', innerHTML: '' }) },
+    AbortController, setTimeout, clearTimeout, Promise, Set, Object, Array, JSON, Math, Number, String
+  };
+  vm.createContext(context);
+  vm.runInContext(read('js/config.js') + '\n' + read('js/onenet.js') +
+    '\n;globalThis.__web = { OneNetService, validateControlParams, normalizeCloudValue, getDataModel };', context);
+  return { api: context.__web, storage };
 }
 
 test('所有页面使用统一的V5工业仪表盘视觉系统', () => {
@@ -68,4 +87,120 @@ test('网页活动资源统一标记V5.1.3', () => {
   assert.match(read('js/mobile-nav.js'), /V5\.1\.3/);
   assert.match(read('css/dashboard-v5.css'), /V5\.1\.3/);
   assert.match(read('README.md'), /V5\.1\.3/);
+});
+
+test('所有页面允许缩放并提供一致的PWA入口', () => {
+  for (const page of pages) {
+    const html = read(`${page}.html`);
+    assert.match(html, /viewport-fit=cover/, `${page}.html 未适配安全区域`);
+    assert.doesNotMatch(html, /user-scalable=no|maximum-scale=1/, `${page}.html 禁止了用户缩放`);
+    assert.match(html, /rel=["']manifest["']/, `${page}.html 缺少PWA清单`);
+    assert.match(html, /name=["']theme-color["']/, `${page}.html 缺少主题色`);
+  }
+
+  const manifest = JSON.parse(read('manifest.json'));
+  assert.equal(manifest.version, 'V5.1.3');
+  assert.equal(manifest.scope, '/');
+  assert.ok(manifest.icons.length > 0);
+  for (const icon of manifest.icons) {
+    assert.ok(fs.existsSync(path.join(root, icon.src.replace(/^\//, ''))), `PWA图标不存在: ${icon.src}`);
+  }
+});
+
+test('登录门控具备失败限速、完整有效期和安全回跳', () => {
+  const login = read('login.html');
+  const guard = read('js/auth-guard.js');
+  const expectedHash = crypto.createHash('sha256').update('admin:admin123').digest('hex');
+  assert.match(login, new RegExp(expectedHash));
+  assert.match(login, /wpt_login_attempts/);
+  assert.match(login, /lockedUntil/);
+  assert.match(login, /wpt_persistent_auth/);
+  assert.match(login, /getSafeNextPath/);
+  assert.match(guard, /legacyAge\s*>=\s*0/);
+  assert.match(guard, /expiresAt/);
+});
+
+test('预览数据明确离线且控制值符合固件边界', () => {
+  const service = read('js/onenet.js');
+  assert.match(service, /_isMock:\s*true,\s*_isOnline:\s*false/);
+  assert.match(service, /c\.id === 'setfreq'\) mockData\[c\.id\] = 100/);
+  assert.match(service, /只有设备详情接口明确确认在线/);
+
+  const { api } = loadWebModules();
+  const mock = api.OneNetService.getMockData();
+  assert.equal(mock._isMock, true);
+  assert.equal(mock._isOnline, false);
+  assert.equal(mock.setfreq, 100);
+  assert.ok(mock.freq >= 20 && mock.freq <= 200);
+
+  const model = api.getDataModel();
+  assert.equal(api.validateControlParams(model, { setfreq: 99.9 }), true);
+  assert.equal(api.validateControlParams(model, { setfreq: 100 }), true);
+  assert.equal(api.validateControlParams(model, { setfreq: 100.1 }), false);
+  assert.equal(api.validateControlParams(model, { setfreq: 200.1 }), false);
+  const freq = model.sensors.find((item) => item.id === 'freq');
+  assert.equal(api.normalizeCloudValue(freq, '99900'), 99.9);
+  assert.equal(api.normalizeCloudValue(freq, 'not-a-number'), undefined);
+});
+
+test('数据模型会过滤异常缓存并保留固件安全边界', () => {
+  const config = read('js/config.js');
+  assert.match(config, /DATA_MODEL_VERSION\s*=\s*3/);
+  assert.match(config, /MAX_MODEL_ITEMS/);
+  assert.match(config, /sanitizeModelItem/);
+  assert.match(config, /merged\.id === 'current'\) merged\.max = 5/);
+  assert.match(config, /merged\.min = 20/);
+  assert.match(config, /merged\.max = 200/);
+  assert.match(config, /getWptState/);
+
+  const malicious = JSON.stringify({
+    sensors: [
+      { id: 'bad id', name: '非法标识', icon: 'fa-bolt', cloudKey: 'bad' },
+      { id: 'safe_id', name: '<img src=x onerror=alert(1)>', icon: 'x\" onclick=alert(1)', cloudKey: '../x' }
+    ],
+    controls: []
+  });
+  const { api } = loadWebModules({ iot_data_model: malicious });
+  const model = api.getDataModel();
+  assert.equal(model.sensors.some((item) => item.id === 'bad id'), false);
+  assert.equal(model.sensors.some((item) => item.icon.includes('onclick')), false);
+  const sanitized = model.sensors.find((item) => item.id === 'safe_id');
+  assert.ok(sanitized);
+  assert.equal(sanitized.name.includes('<'), false);
+  assert.equal(sanitized.cloudKey, 'safe_id');
+});
+
+test('轮询页面在隐藏或离开时停止定时器', () => {
+  const expectations = {
+    index: /stopIndexPolling/,
+    monitoring: /stopMonitorPolling/,
+    control: /_stopControlSync/,
+    history: /stopHistoryPolling/
+  };
+  for (const [page, pattern] of Object.entries(expectations)) {
+    const html = read(`${page}.html`);
+    assert.match(html, pattern);
+    assert.match(html, /visibilitychange/);
+    assert.match(html, /pagehide/);
+  }
+});
+
+test('所有内联脚本均可被JavaScript解析', () => {
+  for (const page of pages) {
+    const html = read(`${page}.html`);
+    const scripts = html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi);
+    for (const match of scripts) {
+      const source = match[1].trim();
+      if (source) assert.doesNotThrow(() => new Function(source), `${page}.html 存在脚本语法错误`);
+    }
+  }
+});
+
+test('Service Worker采用页面网络优先并立即接管新版本', () => {
+  const worker = read('service-worker.js');
+  assert.match(worker, /networkFirst/);
+  assert.match(worker, /request\.mode === 'navigate'/);
+  assert.match(worker, /skipWaiting/);
+  assert.match(worker, /clients\.claim/);
+  assert.match(worker, /icon\.svg/);
 });

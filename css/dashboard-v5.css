@@ -282,6 +282,16 @@ body[data-page="index"] #cardsGrid > div {
   border-color: rgba(255, 112, 112, 0.28);
 }
 
+.monitor-status-chip[data-state="preview"] {
+  color: #bdeff5;
+  border-color: rgba(73, 211, 231, 0.28);
+}
+
+.monitor-status-chip[data-state="preview"] .monitor-status-dot {
+  background: #49d3e7;
+  box-shadow: 0 0 12px rgba(73, 211, 231, 0.68);
+}
+
 .monitor-status-chip[data-state="error"] .monitor-status-dot {
   background: #ff7070;
 }
@@ -414,6 +424,19 @@ body[data-page="login"] input:focus {
 body[data-page="login"] button[type="submit"] {
   background: linear-gradient(105deg, var(--wpt-accent-strong), var(--wpt-accent)) !important;
   box-shadow: 0 10px 24px rgba(8, 145, 178, 0.24) !important;
+}
+
+body[data-page="login"] button[type="submit"]:disabled {
+  cursor: wait;
+  opacity: 0.72;
+  transform: none !important;
+}
+
+body[data-page="login"] input:-webkit-autofill,
+body[data-page="login"] input:-webkit-autofill:hover,
+body[data-page="login"] input:-webkit-autofill:focus {
+  box-shadow: 0 0 0 1000px #f8fbfc inset !important;
+  -webkit-text-fill-color: var(--wpt-ink);
 }
 
 :focus-visible {
