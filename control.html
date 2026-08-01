@@ -149,6 +149,7 @@
     <script>
         const currentModel = getDataModel();
         const controls = currentModel.controls;
+        let _controlsEnabled = false;
         
         let operationLogs = readLocalArray('iot_operation_logs').filter(log => log && typeof log === 'object').slice(0, 20).map(log => ({
             device: /^[A-Za-z][A-Za-z0-9_]*$/.test(String(log.device || '')) ? String(log.device) : 'unknown',
@@ -203,6 +204,16 @@
                     </div>
                 `;
             });
+        }
+
+        function setControlsEnabled(enabled) {
+            _controlsEnabled = enabled === true;
+            const container = document.getElementById('controlsContainer');
+            if (!container) return;
+            container.querySelectorAll('input, button').forEach(element => {
+                element.disabled = !_controlsEnabled;
+            });
+            container.classList.toggle('opacity-60', !_controlsEnabled);
         }
 
         function renderLogs() {
@@ -328,6 +339,10 @@
         }
 
         async function sendControlCommand(id, value) {
+            if (!_controlsEnabled) {
+                showToast('设备未确认在线，无法下发');
+                return false;
+            }
             try {
                 if (typeof OneNetService !== 'undefined') {
                     const config = getOneNetConfig();
@@ -390,11 +405,13 @@
                     const data = await OneNetService.getLatestData();
                     if (data) {
                         if (data._isMock) {
+                            setControlsEnabled(false);
                             connIndicator.className = 'w-2.5 h-2.5 bg-cyan-500 rounded-full mr-2 shadow-[0_0_8px_rgba(6,182,212,0.45)]';
                             connStatus.innerText = '预览·不可控制';
                             connStatus.className = 'text-cyan-600 text-xs font-bold tracking-wide';
                             return;
                         } else if (!data._isOnline) {
+                            setControlsEnabled(false);
                             connIndicator.className = 'w-2.5 h-2.5 bg-yellow-500 rounded-full mr-2 shadow-[0_0_8px_rgba(234,179,8,0.6)]';
                             connStatus.innerText = '离线';
                             connStatus.className = 'text-yellow-600 text-xs font-bold tracking-wide';
@@ -408,9 +425,13 @@
                             return; /* 跳过 controls.forEach, 不写 API 旧数据 */
                         }
                         /* 在线 */
+                        setControlsEnabled(true);
+                        const wptState = typeof getWptState === 'function' ? getWptState(data) : 'IDLE';
                         connIndicator.className = 'w-2.5 h-2.5 bg-[#22c55e] rounded-full mr-2 shadow-[0_0_8px_rgba(34,197,94,0.4)]';
-                        connStatus.innerText = '在线';
-                        connStatus.className = 'text-[#22c55e] text-xs font-bold tracking-wide';
+                        connStatus.innerText = ({ RUNNING: '运行中', SWEEP: '扫频中', FAULT: '设备故障', IDLE: '在线·待机' })[wptState] || '在线';
+                        connStatus.className = wptState === 'FAULT'
+                            ? 'text-red-600 text-xs font-bold tracking-wide'
+                            : 'text-[#22c55e] text-xs font-bold tracking-wide';
                         controls.forEach(c => {
                             if (data[c.id] !== undefined) {
                                 if (c.dataType === 'int32' || c.dataType === 'float' || c.dataType === 'double') {
@@ -426,7 +447,9 @@
                                 } else {
                                     const checkbox = document.getElementById(`toggle-${c.id}`);
                                     if (checkbox) {
-                                        checkbox.checked = data[c.id] === true || data[c.id] === 1 || data[c.id] === 'true' || data[c.id] === '1';
+                                        checkbox.checked = c.id === 'switch' && (wptState === 'RUNNING' || wptState === 'SWEEP')
+                                            ? true
+                                            : (data[c.id] === true || data[c.id] === 1 || data[c.id] === 'true' || data[c.id] === '1');
                                         updateToggleUI(`toggle-${c.id}`);
                                     }
                                 }
@@ -437,6 +460,7 @@
                     }
                 }
             } catch (error) {
+                setControlsEnabled(false);
                 connIndicator.className = 'w-2.5 h-2.5 bg-red-500 rounded-full mr-2 shadow-[0_0_8px_rgba(239,68,68,0.6)]';
                 connStatus.innerText = '连接失败';
                 connStatus.className = 'text-red-600 text-xs font-bold tracking-wide';
@@ -474,6 +498,7 @@
         /* 初始化: 渲染 UI + 填充缓存 + 启动同步 */
         {
             initUI();
+            setControlsEnabled(false);
             renderLogs();
 
             document.addEventListener('visibilitychange', () => {
@@ -489,16 +514,7 @@
             if (cachedData) {
                 try {
                     const data = JSON.parse(cachedData);
-                    /* 连接指示器从缓存恢复 */
-                    {
-                        const ci = document.getElementById('connIndicator');
-                        const cs = document.getElementById('connStatus');
-                        if (data._isOnline === true) {
-                            ci.className = 'w-2.5 h-2.5 bg-[#22c55e] rounded-full mr-2 shadow-[0_0_8px_rgba(34,197,94,0.4)]';
-                            cs.innerText = '在线';
-                            cs.className = 'text-[#22c55e] text-xs font-bold tracking-wide';
-                        }
-                    }
+                    /* 缓存只用于预填显示，控制保持禁用直到实时接口确认在线。 */
                     controls.forEach(c => {
                         if (data[c.id] !== undefined) {
                             if (c.dataType === 'int32' || c.dataType === 'float' || c.dataType === 'double' || c.dataType === 'string') {

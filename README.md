@@ -9,6 +9,8 @@
 
 WPT 无线充电系统 V5.1.3 的响应式网页端控制台，部署于 Cloudflare Workers 静态资源服务。通过 OneNET HTTP API 直连云平台物模型，提供实时监控、远程控制、历史数据、数据模型管理与统一登录守卫。支持 PWA 离线访问，可添加至手机主屏幕。
 
+当前生产页面仍以发射端 `TX_001` 单设备为主。ESP32-S3 接收端网关、`RX_001` 双设备配置、接收端看板和 TX/RX 时间对齐曲线只完成路线规划，尚未实现；详情见 `docs/dual-device-roadmap.md`。
+
 ## 访问地址
 
 **https://wptonenet.483763727.workers.dev**
@@ -25,7 +27,8 @@ WPT 无线充电系统 V5.1.3 的响应式网页端控制台，部署于 Cloudfl
 8. [项目结构](#项目结构)
 9. [OneNET 配置](#onenet-配置)
 10. [数据模型管理](#数据模型管理)
-11. [常见问题](#常见问题)
+11. [TX/RX双设备规划](#txrx-双设备规划)
+12. [常见问题](#常见问题)
 
 ---
 
@@ -220,6 +223,8 @@ ONENETapp/
 ├── icon.svg            # PWA普通/Maskable图标
 ├── tests/
 │   └── ui-contract.test.cjs # UI、登录、PWA和脚本语法契约
+├── docs/
+│   └── dual-device-roadmap.md # ESP32接收端与TX/RX双设备演进规划
 └── wrangler.jsonc      # Cloudflare Workers 静态资源配置
 ```
 
@@ -261,6 +266,16 @@ Token 格式: `version=2018-10-31&res=products%2F{产品ID}%2Fdevices%2F{设备�
 
 默认模型包含 3 个传感器 (`voltage`, `current`, `freq`) 和 2 个控制器 (`switch`, `setfreq`)。电流安全上限为5A；频率范围20–200kHz，20.0–99.9kHz步进0.1kHz，100–200kHz步进1kHz。旧版本地模型会在读取时自动迁移并恢复频率换算函数。
 
+## TX/RX 双设备规划
+
+计划把当前单设备配置升级为相互隔离的 `tx` 与 `rx` 配置，并为 `TX_001` 和 `RX_001` 分别维护在线状态、数据新鲜度、告警、历史和命令确认。凭据继续只保存在用户本地或受保护后端，不进入仓库。
+
+接收端必须区分网关在线、MQTT 在线、BLE 在线、遥测新鲜、测量有效、刺激、故障和命令实际执行。BLE 断开时页面显示离线/过期并禁用 `START`，不得继续展示旧数据为实时值，也不得声称接收端安全。
+
+TX/RX 曲线只按时间戳和明确容差对齐，禁止按数组下标拼接。接收端刺激电流不等于无线接收功率；没有真实接收功率或整流输出电流测量时，不生成误导性的传输效率曲线。
+
+以上均为规划，现有页面不能因新增几张卡片就宣称已支持双端系统。完整数据模型、迁移阶段和验收标准见 `docs/dual-device-roadmap.md`。
+
 ---
 
 ## 常见问题
@@ -279,7 +294,7 @@ Token 格式: `version=2018-10-31&res=products%2F{产品ID}%2Fdevices%2F{设备�
 
 ## 关联项目
 
-- 主项目: [Ran-sh/WPT_PWM](https://github.com/Ran-sh/WPT_PWM)（分支 `5.0`）
+- 主项目: [Ran-sh/WPT_TX](https://github.com/Ran-sh/WPT_TX)（分支 `5.0`）
 - 微信小程序: 主项目 `安卓app/` 目录
 - Railway 桥接 (历史): [Ran-sh/WPT_Railway](https://github.com/Ran-sh/WPT_Railway)
 

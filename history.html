@@ -169,7 +169,8 @@
         function toCsvCell(value) {
             let cell = value === undefined || value === null ? '' : String(value);
             /* 避免导出的CSV在表格软件中被解释为公式。 */
-            if (/^[=+\-@]/.test(cell)) cell = "'" + cell;
+            var numeric = /^-?(?:\d+\.?\d*|\.\d+)$/.test(cell);
+            if (!numeric && /^[=+\-@]/.test(cell)) cell = "'" + cell;
             return '"' + cell.replace(/"/g, '""') + '"';
         }
 

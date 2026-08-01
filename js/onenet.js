@@ -63,19 +63,38 @@ function getStoredObject(key) {
 }
 
 function normalizeCloudValue(definition, rawValue) {
-    if (!definition) return undefined;
+    if (!definition || rawValue === null || rawValue === undefined) return undefined;
     if (definition.dataType === 'bool') {
         if (rawValue === true || rawValue === 1 || rawValue === '1' || rawValue === 'true') return true;
         if (rawValue === false || rawValue === 0 || rawValue === '0' || rawValue === 'false') return false;
         return undefined;
     }
     if (definition.dataType === 'int32' || definition.dataType === 'float' || definition.dataType === 'double') {
+        if (typeof rawValue === 'string' && !rawValue.trim()) return undefined;
         var number = Number(rawValue);
         if (!Number.isFinite(number)) return undefined;
+        if (definition.dataType === 'int32' && !Number.isInteger(number)) return undefined;
         if (definition.fromCloud) number = definition.fromCloud(number);
         return Number.isFinite(number) ? number : undefined;
     }
     return String(rawValue).slice(0, 256);
+}
+
+function normalizeRawValue(value) {
+    if (value === null || value === undefined) return undefined;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+    if (typeof value !== 'string') return undefined;
+    var text = value.trim();
+    if (!text) return undefined;
+    if (text === 'true') return true;
+    if (text === 'false') return false;
+    var numeric = Number(text);
+    return Number.isFinite(numeric) ? numeric : text.slice(0, 256);
+}
+
+function owns(object, key) {
+    return Object.prototype.hasOwnProperty.call(object, key);
 }
 
 class OneNetService {
@@ -124,12 +143,11 @@ class OneNetService {
             var newData = {};  /* 延迟写缓存到 _isOnline 确认后 */
             if (result.data && Array.isArray(result.data)) {
                 var rawData = {};
-                result.data.forEach(function(item) {
-                    var val = item.value;
-                    if (val === 'true') val = true;
-                    else if (val === 'false') val = false;
-                    else if (!isNaN(val) && val !== '') val = Number(val);
-                    rawData[item.identifier] = val;
+                result.data.slice(0, 64).forEach(function(item) {
+                    if (!item || typeof item.identifier !== 'string' ||
+                        !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(item.identifier)) return;
+                    var val = normalizeRawValue(item.value);
+                    if (val !== undefined) rawData[item.identifier] = val;
                 });
 
                 var model = typeof getDataModel === 'function' ? getDataModel() : { sensors: [], controls: [] };
@@ -143,18 +161,20 @@ class OneNetService {
                     var value = normalizeCloudValue(c, rawData[c.cloudKey]);
                     if (value !== undefined) data[c.id] = value;
                 });
+                data._raw = rawData;
 
                 /* 乐观锁: 3s 内下发过的属性不覆盖 */
                 var cachedData = getStoredObject('iot_latest_data');
                 var controlLocks = getStoredObject('iot_control_locks');
                 var now = Date.now();
                 for (var key in data) {
-                    if (data.hasOwnProperty(key) && controlLocks[key] && (now - controlLocks[key] < 3000))
+                    if (owns(data, key) && controlLocks[key] && (now - controlLocks[key] < 3000))
                         data[key] = cachedData[key];
                 }
-                newData = {};
-                for (var k in cachedData) { if (cachedData.hasOwnProperty(k)) newData[k] = cachedData[k]; }
-                for (var k2 in data) { if (data.hasOwnProperty(k2)) newData[k2] = data[k2]; }
+                /* 只缓存本次云端响应，避免把旧字段重新记为实时历史。 */
+                newData = data;
+                delete newData._isMock;
+                delete newData._error;
                 /* 延迟写缓存: 等在线状态确认后一并写入 (见下方) */
 
             }
@@ -234,7 +254,7 @@ class OneNetService {
         model.sensors.forEach(function(s) { reverseMap[s.id] = s.cloudKey; });
         var mappedParams = {};
         for (var key in params) {
-            if (!params.hasOwnProperty(key)) continue;
+            if (!owns(params, key)) continue;
             var val = params[key];
             for (var j = 0; j < model.controls.length; j++) {
                 if (model.controls[j].id === key && model.controls[j].toCloud) { val = model.controls[j].toCloud(val); break; }
@@ -259,7 +279,7 @@ class OneNetService {
                     var cachedData = getStoredObject('iot_latest_data');
                     var controlLocks = getStoredObject('iot_control_locks');
                     var now = Date.now();
-                    for (var k in params) { if (params.hasOwnProperty(k)) { cachedData[k] = params[k]; controlLocks[k] = now; } }
+                    for (var k in params) { if (owns(params, k)) { cachedData[k] = params[k]; controlLocks[k] = now; } }
                     if (typeof writeLocalJSON === 'function') {
                         writeLocalJSON('iot_latest_data', cachedData);
                         writeLocalJSON('iot_control_locks', controlLocks);

@@ -1,5 +1,5 @@
 /* WPT Monitor V5.1.3 Service Worker：页面网络优先，静态资源缓存优先。 */
-var CACHE = 'wpt-v5-1-3-web-2';
+var CACHE = 'wpt-v5-1-3-web-3';
 var BASE = self.location.pathname.replace(/\/[^/]*$/, '');
 var CORE_ASSETS = [
   BASE + '/', BASE + '/login.html', BASE + '/index.html', BASE + '/monitoring.html',

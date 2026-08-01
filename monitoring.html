@@ -188,7 +188,7 @@
         // 页面加载时尝试读取本地缓存
         const cachedData = localStorage.getItem('iot_latest_data');
         if (cachedData) {
-            try { updateCards(JSON.parse(cachedData)); } 
+            try { updateCards(JSON.parse(cachedData), true); }
             catch (e) {}
         }
 
@@ -210,6 +210,7 @@
                     }
                 }
             } catch (error) {
+                updateCards({ _isOnline: false });
                 updateOverview(null, 'error');
             } finally {
                 _monitorPolling = false;
@@ -240,9 +241,9 @@
             chip.dataset.state = state;
             var onlineLabel = '设备在线';
             if (state === 'online' && typeof getWptState === 'function') {
-                onlineLabel = { RUNNING: '设备运行中', SWEEP: '设备扫频中', IDLE: '设备在线·待机' }[getWptState(data)] || onlineLabel;
+                onlineLabel = { RUNNING: '设备运行中', SWEEP: '设备扫频中', FAULT: '设备故障', IDLE: '设备在线·待机' }[getWptState(data)] || onlineLabel;
             }
-            text.innerText = state === 'online' ? onlineLabel : (state === 'preview' ? '预览模式' : (state === 'error' ? '连接失败' : '设备离线'));
+            text.innerText = state === 'online' ? onlineLabel : (state === 'preview' ? '预览模式' : (state === 'error' ? '连接失败' : (state === 'stale' ? '缓存待刷新' : '设备离线')));
             if (state === 'online' || state === 'preview') {
                 updated.innerText = new Date().toLocaleTimeString('zh-CN', { hour12: false });
             } else if (state === 'offline') {
@@ -250,10 +251,11 @@
             }
         }
 
-        function updateCards(data) {
+        function updateCards(data, isFromCache = false) {
             var isPreview = !!(data && data._isMock);
-            var isOffline = !(data && (data._isOnline || isPreview));
-            updateOverview(data);
+            /* 页面重载后的持久化缓存没有新鲜度保证，只能显示为待刷新。 */
+            var isOffline = isFromCache || !(data && (data._isOnline || isPreview));
+            updateOverview(data, isFromCache ? 'stale' : undefined);
             sensors.forEach(s => {
                 var valEl = document.getElementById(`val-${s.id}`);
                 var statusEl = document.getElementById(`status-${s.id}`);
@@ -278,6 +280,9 @@
                         } else if (s.id === 'freq' && numericVal === 0 && getWptState(data) === 'IDLE') {
                             statusEl.innerHTML = '<span class="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2"></span><span class="text-gray-600 text-xs font-bold tracking-wide">功率输出已停止</span>';
                             statusEl.className = 'flex items-center mt-2 bg-gray-50 w-max px-2 py-1 rounded-md border border-gray-200';
+                        } else if (s.id === 'freq' && numericVal === 0 && getWptState(data) === 'FAULT') {
+                            statusEl.innerHTML = '<span class="w-1.5 h-1.5 bg-red-500 rounded-full mr-2"></span><span class="text-red-600 text-xs font-bold tracking-wide">设备故障停机</span>';
+                            statusEl.className = 'flex items-center mt-2 bg-red-50/60 w-max px-2 py-1 rounded-md border border-red-200';
                         } else if (!isNormal) {
                             statusEl.innerHTML = `<span class="w-1.5 h-1.5 bg-red-500 rounded-full mr-2 shadow-[0_0_6px_rgba(239,68,68,0.6)]"></span><span class="text-red-600 text-xs font-bold tracking-wide">状态异常 (${numericVal > s.max ? '偏高' : '偏低'})</span>`;
                             statusEl.className = 'flex items-center mt-2 bg-red-50/50 w-max px-2 py-1 rounded-md border border-red-100/50';

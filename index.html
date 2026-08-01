@@ -206,7 +206,7 @@
                             connStatus.className = 'text-cyan-600 text-sm font-bold tracking-wide';
                         } else if (data._isOnline) {
                             connIndicator.className = 'w-2.5 h-2.5 bg-[#22c55e] rounded-full mr-2 shadow-[0_0_8px_rgba(34,197,94,0.4)]';
-                            var stateLabel = { RUNNING: '运行中', SWEEP: '扫频中', IDLE: '在线·待机' }[getWptState(data)] || '在线';
+                            var stateLabel = { RUNNING: '运行中', SWEEP: '扫频中', FAULT: '设备故障', IDLE: '在线·待机' }[getWptState(data)] || '在线';
                             connStatus.innerText = stateLabel;
                             connStatus.className = 'text-[#22c55e] text-sm font-bold tracking-wide';
                         } else {
@@ -219,6 +219,7 @@
                     }
                 }
             } catch (error) {
+                updateUI({ _isOnline: false });
                 connIndicator.className = 'w-2.5 h-2.5 bg-red-500 rounded-full mr-2 shadow-[0_0_8px_rgba(239,68,68,0.6)]';
                 connStatus.innerText = '连接失败';
                 connStatus.className = 'text-red-600 text-sm font-bold tracking-wide';
@@ -282,7 +283,13 @@
             };
 
             var isPreview = !!(data && data._isMock);
-            var isOffline = !(data && (data._isOnline || isPreview));
+            /* 持久化缓存只能用于恢复历史上下文，不能冒充本次会话的实时在线数据。 */
+            var isOffline = isFromCache || !(data && (data._isOnline || isPreview));
+            var currentState = typeof getWptState === 'function' ? getWptState(data) : 'IDLE';
+            if (!isOffline && !isPreview) {
+                checkAlert('device_fault', currentState === 'FAULT' ? 1 : 0,
+                    0, '设备故障锁存', true);
+            }
             currentModel.sensors.forEach(s => {
                 var valEl = document.getElementById(`sensor-val-${s.id}`);
                 var statusEl = document.getElementById(`sensor-status-${s.id}`);
@@ -307,6 +314,9 @@
                         if (s.id === 'freq' && numericVal === 0 && getWptState(data) === 'IDLE') {
                             statusEl.innerText = '待机';
                             statusEl.className = 'text-xs font-bold text-gray-500 bg-gray-50 px-3 py-1 rounded-lg border border-gray-200';
+                        } else if (s.id === 'freq' && numericVal === 0 && getWptState(data) === 'FAULT') {
+                            statusEl.innerText = '故障停机';
+                            statusEl.className = 'text-xs font-bold text-red-600 bg-red-50 px-3 py-1 rounded-lg border border-red-200';
                         } else if (numericVal > s.max) {
                             statusEl.innerText = '过高';
                             statusEl.className = 'text-xs font-bold text-red-600 bg-red-50 px-3 py-1 rounded-lg border border-red-200';
@@ -338,7 +348,7 @@
                         var isOn = !!data[c.id];
                         var wptState = typeof getWptState === 'function' ? getWptState(data) : (isOn ? 'RUNNING' : 'IDLE');
                         statusEl.innerText = c.id === 'switch'
-                            ? ({ RUNNING: '运行中', SWEEP: '扫频中', IDLE: '已停止', PREVIEW: '演示' }[wptState] || '已停止')
+                            ? ({ RUNNING: '运行中', SWEEP: '扫频中', FAULT: '故障锁存', IDLE: '已停止', PREVIEW: '演示' }[wptState] || '已停止')
                             : (isOn ? '已开启' : '已关闭');
                         var cColors = COLOR_CLASSES[c.color] || COLOR_CLASSES['slate'];
                         statusEl.className = `text-xs font-bold px-3 py-1 rounded-full tracking-wide border mr-3 ${isOn ? `${cColors.text} ${cColors.bg} ${cColors.border}` : 'text-gray-500 bg-gray-50 border-gray-200/50'}`;

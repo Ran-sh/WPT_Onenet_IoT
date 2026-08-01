@@ -117,7 +117,8 @@ function copyFields(source) {
     const target = {};
     if (!source || typeof source !== 'object') return target;
     Object.keys(source).forEach(function(key) {
-        if (typeof source[key] !== 'function') target[key] = source[key];
+        if (key !== '__proto__' && key !== 'prototype' && key !== 'constructor' &&
+            typeof source[key] !== 'function') target[key] = source[key];
     });
     return target;
 }
@@ -194,6 +195,11 @@ function getDecimals(dataType, step) {
 function getWptState(data) {
     if (!data || data._isMock) return 'PREVIEW';
     if (!data._isOnline) return 'OFFLINE';
+    var protocolState = data._raw && Number(data._raw.S);
+    if (protocolState === 3) return 'FAULT';
+    if (protocolState === 2) return 'RUNNING';
+    if (protocolState === 1) return 'SWEEP';
+    if (protocolState === 0) return 'IDLE';
     if (data.switch === true || data.switch === 1 || data.switch === 'true' || data.switch === '1') return 'RUNNING';
     if (Number(data.freq) > 0) return 'SWEEP';
     return 'IDLE';
@@ -203,7 +209,8 @@ function isSensorValueNormal(sensor, value, data) {
     const numericValue = Number(value);
     if (!Number.isFinite(numericValue)) return false;
     /* STM32 在 IDLE/FAULT 状态按协议上报 F=0，这不是低频报警。 */
-    if (sensor && sensor.id === 'freq' && numericValue === 0 && getWptState(data) === 'IDLE') return true;
+    if (sensor && sensor.id === 'freq' && numericValue === 0 &&
+        (getWptState(data) === 'IDLE' || getWptState(data) === 'FAULT')) return true;
     return numericValue >= sensor.min && numericValue <= sensor.max;
 }
 
