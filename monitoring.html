@@ -195,6 +195,7 @@
         // 同步 OneNet 数据
         var _monitorPolling = false;
         var _monitorTimer = null;
+        var _monitorInitTimer = null;  /* 初始 500ms 同步的独立句柄，stop 时一并取消 */
         async function syncData(isManual = false) {
             if (_monitorPolling || document.visibilityState === 'hidden') return;
             _monitorPolling = true;
@@ -451,11 +452,17 @@
 
         function stopMonitorPolling() {
             clearInterval(_monitorTimer);
+            clearTimeout(_monitorInitTimer);
             _monitorTimer = null;
+            _monitorInitTimer = null;
         }
         function startMonitorPolling() {
-            if (_monitorTimer || document.visibilityState === 'hidden') return;
-            setTimeout(syncData, 500);
+            if (_monitorTimer || _monitorInitTimer || document.visibilityState === 'hidden') return;
+            /* 先记录句柄再调度，回调执行时先置空再同步，避免隐藏/切回时重复注册 */
+            _monitorInitTimer = setTimeout(function() {
+                _monitorInitTimer = null;
+                syncData();
+            }, 500);
             _monitorTimer = setInterval(syncData, 10000);
         }
         startMonitorPolling();

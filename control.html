@@ -321,7 +321,7 @@
             await sendControlCommand(id, value);
         }
 
-        let _switchPending = false;  /* 防止 Switch 防抖窗口内的重复发送 */
+        let _switchPending = false;  /* 仅防止真实 in-flight 请求重入，请求结束立即解锁 */
         async function handleControl(id) {
             if (_switchPending) return;
             _switchPending = true;
@@ -329,13 +329,21 @@
             const value = checkbox.checked;
 
             checkbox.disabled = true;
-            const success = await sendControlCommand(id, value);
-            if (!success) {
+            try {
+                const success = await sendControlCommand(id, value);
+                if (!success) {
+                    checkbox.checked = !checkbox.checked;
+                }
+            } catch (error) {
+                /* 发送抛异常时同样只回滚一次，并继续抛出，由 finally 统一解锁与刷新 UI */
                 checkbox.checked = !checkbox.checked;
+                throw error;
+            } finally {
+                /* 无论成功或异常都立即恢复 checkbox 与锁，避免请求结束后仍锁定 2 秒 */
+                checkbox.disabled = false;
+                _switchPending = false;
+                updateToggleUI(`toggle-${id}`);
             }
-            checkbox.disabled = false;
-            updateToggleUI(`toggle-${id}`);
-            setTimeout(() => { _switchPending = false; }, 2000);  /* 2s 防抖 */
         }
 
         async function sendControlCommand(id, value) {
@@ -476,17 +484,24 @@
         /* 使用 'load' 事件 + 去重标志, 防止 onload+fallback 重复注册两次 setInterval */
         let _controlSyncStarted = false;
         let _ctrlSyncTimer = null;
+        let _controlInitTimer = null;  /* 初始 500ms 同步的独立句柄，stop 时一并取消 */
         function _startControlSync() {
-            if (_controlSyncStarted || document.visibilityState === 'hidden') return;
+            if (_controlSyncStarted || _controlInitTimer || document.visibilityState === 'hidden') return;
             _controlSyncStarted = true;
-            setTimeout(syncStatus, 500);
+            /* 先记录句柄再调度，回调执行时先置空再同步，避免隐藏/切回时重复注册 */
+            _controlInitTimer = setTimeout(function() {
+                _controlInitTimer = null;
+                syncStatus();
+            }, 500);
             _ctrlSyncTimer = setInterval(syncStatus, 5000);
         }
         function _stopControlSync() {
             clearInterval(_ctrlSyncTimer);
             clearTimeout(_controlRetryTimer);
+            clearTimeout(_controlInitTimer);
             _ctrlSyncTimer = null;
             _controlRetryTimer = null;
+            _controlInitTimer = null;
             _controlSyncStarted = false;
         }
         window.addEventListener('load', _startControlSync);

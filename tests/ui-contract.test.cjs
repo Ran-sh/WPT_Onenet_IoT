@@ -12,6 +12,42 @@ function read(relativePath) {
   return fs.readFileSync(path.join(root, relativePath), 'utf8');
 }
 
+/* 提取源码中从签名开始、括号配平的函数片段，用于在 VM 中做行为验证 */
+function extractFunction(source, signature) {
+  const start = source.indexOf(signature);
+  assert.ok(start >= 0, `未找到函数签名: ${signature}`);
+  let depth = 0;
+  let i = start;
+  for (; i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}') {
+      depth--;
+      if (depth === 0) { i += 1; break; }
+    }
+  }
+  assert.equal(depth, 0, `函数片段括号未配平: ${signature}`);
+  return source.slice(start, i);
+}
+
+/* 构建 handleControl 的最小运行环境：伪 DOM、可注入的发送实现与定时器桩 */
+function buildHandleControlContext(checkbox, sendImpl) {
+  const context = {
+    document: {
+      getElementById: (id) => id === 'toggle-switch' ? checkbox : null
+    },
+    updateToggleUI: () => {},
+    setTimeout: (fn, ms) => { context.__timeoutCalls.push({ fn, ms }); return 1; },
+    clearTimeout: () => {},
+    __sendCalls: [],
+    __timeoutCalls: []
+  };
+  context.sendControlCommand = async (id, value) => {
+    context.__sendCalls.push({ id, value });
+    return sendImpl(id, value);
+  };
+  return context;
+}
+
 function loadWebModules(initialStorage = {}, fetchImpl) {
   const storage = new Map(Object.entries(initialStorage));
   const context = {
@@ -291,4 +327,85 @@ test('Service Worker采用页面网络优先并立即接管新版本', () => {
   assert.match(worker, /skipWaiting/);
   assert.match(worker, /clients\.claim/);
   assert.match(worker, /icon\.svg/);
+});
+
+test('控制页 Switch 请求结束立即解锁，不再使用 2s 定时器且异常不永久锁死', async () => {
+  const control = read('control.html');
+  /* 静态契约：_switchPending 必须在 finally 中与 checkbox 一起恢复，并更新 UI */
+  assert.match(control, /finally\s*\{[\s\S]{0,200}checkbox\.disabled\s*=\s*false;[\s\S]{0,200}_switchPending\s*=\s*false/);
+  assert.match(control, /finally\s*\{[\s\S]{0,300}updateToggleUI\(`toggle-\$\{id\}`\)/);
+  /* 不再依赖 2s 定时解锁 */
+  assert.doesNotMatch(control, /_switchPending\s*=\s*false;[\s\S]{0,40}\},\s*2000/);
+
+  /* 行为契约：真实 in-flight 期间拒绝重入，请求结束后立即解锁 */
+  const fnSrc = extractFunction(control, 'async function handleControl(id)');
+  const checkbox = { checked: false, disabled: false };
+  const context = buildHandleControlContext(checkbox, () => new Promise((resolve) => {
+    context.__resolveSend = () => resolve(true);
+  }));
+  vm.createContext(context);
+  vm.runInContext('let _switchPending = false;\n' + fnSrc + '\nglobalThis.__getPending = () => _switchPending;', context);
+
+  const first = context.handleControl('switch');
+  await Promise.resolve();
+  context.handleControl('switch'); /* in-flight 重入应被拒绝 */
+  assert.equal(context.__sendCalls.length, 1);
+  assert.equal(checkbox.disabled, true);
+  context.__resolveSend();
+  await first;
+  assert.equal(context.__getPending(), false);
+  assert.equal(checkbox.disabled, false);
+  assert.equal(context.__sendCalls.length, 1);
+});
+
+test('控制页 Switch 请求抛异常时仍恢复 checkbox 与锁状态', async () => {
+  const control = read('control.html');
+  const fnSrc = extractFunction(control, 'async function handleControl(id)');
+  const checkbox = { checked: true, disabled: false };
+  const context = buildHandleControlContext(checkbox, async () => { throw new Error('网络异常'); });
+  vm.createContext(context);
+  vm.runInContext('let _switchPending = false;\n' + fnSrc + '\nglobalThis.__getPending = () => _switchPending;', context);
+
+  await assert.rejects(context.handleControl('switch'));
+  assert.equal(checkbox.checked, false);
+  assert.equal(context.__getPending(), false);
+  assert.equal(checkbox.disabled, false);
+});
+
+test('三个轮询页的 500ms 初始同步都有独立句柄且 stop 可取消', () => {
+  const index = read('index.html');
+  const monitoring = read('monitoring.html');
+  const control = read('control.html');
+
+  /* 首页：独立句柄、stop 清理、start 去重、回调先置空再同步 */
+  assert.match(index, /_pollInitTimer\s*=\s*setTimeout\(/);
+  assert.match(index, /function\s+stopIndexPolling\(\)\s*\{[\s\S]{0,200}clearTimeout\(_pollInitTimer\)/);
+  assert.match(index, /function\s+startIndexPolling\(\)\s*\{[\s\S]{0,160}if\s*\(_pollTimer\s*\|\|\s*_pollInitTimer/);
+  assert.match(index, /_pollInitTimer\s*=\s*null;\s*syncData\(\)/);
+
+  /* 监测页：独立句柄、stop 清理、start 去重、回调先置空再同步 */
+  assert.match(monitoring, /_monitorInitTimer\s*=\s*setTimeout\(/);
+  assert.match(monitoring, /function\s+stopMonitorPolling\(\)\s*\{[\s\S]{0,200}clearTimeout\(_monitorInitTimer\)/);
+  assert.match(monitoring, /function\s+startMonitorPolling\(\)\s*\{[\s\S]{0,160}if\s*\(_monitorTimer\s*\|\|\s*_monitorInitTimer/);
+  assert.match(monitoring, /_monitorInitTimer\s*=\s*null;\s*syncData\(\)/);
+
+  /* 控制页：独立句柄、stop 清理、start 去重、回调先置空再同步 */
+  assert.match(control, /_controlInitTimer\s*=\s*setTimeout\(/);
+  assert.match(control, /function\s+_stopControlSync\(\)\s*\{[\s\S]{0,200}clearTimeout\(_controlInitTimer\)/);
+  assert.match(control, /function\s+_startControlSync\(\)\s*\{[\s\S]{0,160}if\s*\(_controlSyncStarted\s*\|\|\s*_controlInitTimer/);
+  assert.match(control, /_controlInitTimer\s*=\s*null;\s*syncStatus\(\)/);
+});
+
+test('轮询生命周期保留 interval/retry 清理与 pagehide/visibilitychange 行为', () => {
+  const index = read('index.html');
+  const monitoring = read('monitoring.html');
+  const control = read('control.html');
+
+  assert.match(index, /function\s+stopIndexPolling\(\)\s*\{[\s\S]{0,200}clearInterval\(_pollTimer\)[\s\S]{0,200}clearTimeout\(_indexRetryTimer\)/);
+  assert.match(monitoring, /function\s+stopMonitorPolling\(\)\s*\{[\s\S]{0,200}clearInterval\(_monitorTimer\)/);
+  assert.match(control, /function\s+_stopControlSync\(\)\s*\{[\s\S]{0,200}clearInterval\(_ctrlSyncTimer\)[\s\S]{0,200}clearTimeout\(_controlRetryTimer\)/);
+  for (const html of [index, monitoring, control]) {
+    assert.match(html, /visibilitychange/);
+    assert.match(html, /pagehide/);
+  }
 });

@@ -428,16 +428,23 @@
         }
 
         var _pollTimer = null;
+        var _pollInitTimer = null;  /* 初始 500ms 同步的独立句柄，stop 时一并取消 */
         var _oneNetConfigured = checkOneNetConfig() !== false;
         function stopIndexPolling() {
             clearInterval(_pollTimer);
             clearTimeout(_indexRetryTimer);
+            clearTimeout(_pollInitTimer);
             _pollTimer = null;
             _indexRetryTimer = null;
+            _pollInitTimer = null;
         }
         function startIndexPolling() {
-            if (_pollTimer || document.visibilityState === 'hidden') return;
-            setTimeout(syncData, 500);
+            if (_pollTimer || _pollInitTimer || document.visibilityState === 'hidden') return;
+            /* 先记录句柄再调度，回调执行时先置空再同步，避免隐藏/切回时重复注册 */
+            _pollInitTimer = setTimeout(function() {
+                _pollInitTimer = null;
+                syncData();
+            }, 500);
             if (!_oneNetConfigured) return;
             _pollTimer = setInterval(syncData, 5000);
         }
