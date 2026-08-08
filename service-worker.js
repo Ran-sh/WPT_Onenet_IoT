@@ -1,11 +1,11 @@
-/* WPT Monitor V5.1.3 Service Worker：页面网络优先，静态资源缓存优先。 */
-var CACHE = 'wpt-v5-1-3-web-3';
+/* WPT Monitor V6.0.0 Service Worker：页面网络优先，静态资源缓存优先。 */
+var CACHE = 'wpt-v6-0-0-web-1';
 var BASE = self.location.pathname.replace(/\/[^/]*$/, '');
 var CORE_ASSETS = [
   BASE + '/', BASE + '/login.html', BASE + '/index.html', BASE + '/monitoring.html',
   BASE + '/control.html', BASE + '/history.html', BASE + '/alerts.html', BASE + '/settings.html',
   BASE + '/js/auth-guard.js', BASE + '/js/config.js', BASE + '/js/onenet.js', BASE + '/js/mobile-nav.js',
-  BASE + '/css/dashboard-v5.css', BASE + '/manifest.json', BASE + '/icon.svg'
+  BASE + '/css/dashboard.css', BASE + '/manifest.json', BASE + '/icon.svg'
 ];
 var CDN_HOSTS = ['cdn.tailwindcss.com', 'cdnjs.cloudflare.com', 'cdn.jsdelivr.net'];
 

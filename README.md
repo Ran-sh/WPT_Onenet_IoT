@@ -5,11 +5,11 @@
 [![PWA](https://img.shields.io/badge/PWA-Enabled-5A0FC8)]()
 [![Charts](https://img.shields.io/badge/Charts-Chart.js-FF6384)]()
 [![CSS](https://img.shields.io/badge/CSS-Tailwind-06B6D4)]()
-[![Version](https://img.shields.io/badge/Version-V5.1.3-brightgreen)]()
+[![Version](https://img.shields.io/badge/Version-V6.0.0-brightgreen)]()
 
-WPT 无线充电系统 V5.1.3 的响应式网页端控制台，部署于 Cloudflare Workers 静态资源服务。通过 OneNET HTTP API 直连云平台物模型，提供实时监控、远程控制、历史数据、数据模型管理与统一登录守卫。支持 PWA 离线访问，可添加至手机主屏幕。
+WPT 无线充电系统 V6.0.0 的响应式网页端控制台，部署于 Cloudflare Workers 静态资源服务。通过 OneNET HTTP API 直连云平台物模型，提供实时监控、远程控制、历史数据、数据模型管理与统一登录守卫。支持 PWA 离线访问，可添加至手机主屏幕。
 
-当前生产页面仍以发射端 `TX_001` 单设备为主。网关到 OneNET RX 的真实上/下行已在实验台（控制板断功率）验证，但自建 ONENETapp 的 `RX_001` 双设备配置、接收端看板和 TX/RX 时间对齐曲线仍未实现，仍属路线规划；详情见 `docs/dual-device-roadmap.md`。
+当前 V6.0.0 页面仍以发射端 `TX_001` 单设备为主。网关到 OneNET RX 的真实上/下行已在实验台（控制板断功率）验证，但自建 ONENETapp 的 `RX_001` 双设备配置、接收端看板和 TX/RX 时间对齐曲线仍未实现，仍属路线规划；详情见 `docs/dual-device-roadmap.md`。
 
 ## 访问地址
 
@@ -183,7 +183,7 @@ setProperty({setfreq: 108}):
 2. 生产分支使用 `master`；`gh-pages` 保持为完全相同的发布镜像。
 3. 项目由 `wrangler.jsonc` 声明根目录静态资源和SPA回退，无需前端构建命令。
 4. 在 Cloudflare Zero Trust 中为 `wptonenet.483763727.workers.dev` 配置 Access 策略，避免仅依赖前端门控。
-5. 部署完成后访问 `https://wptonenet.483763727.workers.dev/`，用无痕窗口验证登录、受保护页面、OneNET连接和V5.1.3版本元数据。
+5. 部署完成后访问 `https://wptonenet.483763727.workers.dev/`，用无痕窗口验证登录、受保护页面、OneNET连接和V6.0.0版本元数据。
 
 ### 手动推送
 
@@ -212,7 +212,7 @@ ONENETapp/
 ├── settings.html       # 设置 (OneNET 凭证 + 数据模型)
 ├── login.html          # 登录页
 ├── css/
-│   └── dashboard-v5.css # 全站工业仪表盘视觉系统
+│   └── dashboard.css   # 全站工业仪表盘视觉系统
 ├── js/
 │   ├── config.js       # OneNET 配置 + 数据模型 CRUD + 工具函数
 │   ├── onenet.js       # OneNetService 类 (数据拉取 + 属性设置)
@@ -284,7 +284,7 @@ TX/RX 曲线只按时间戳和明确容差对齐，禁止按数组下标拼接�
 |:---|:---|:---|
 | 所有卡片显示 `--` | 未配置 OneNET 凭证 | 进设置页填写产品 ID / 设备名 / Token |
 | 设置页改了但仪表盘没变 | 页面缓存 | 切换页面或刷新, 仪表盘监听 `visibilitychange` |
-| 下发指令无效 | ESP8266 固件版本或频率步进不匹配 | 使用V5.1.3固件，并确认频率在20–200kHz合法步进上 |
+| 下发指令无效 | 网页与设备固件分支或频率步进不匹配 | 使用与当前部署匹配的固件，并确认频率在20–200kHz合法步进上 |
 | 历史图表为空 | 数据量不足 | 至少等 1 分钟 (每分钟采样 1 条) |
 | 页面显示“预览” | 未配置OneNET | 预览值不是实时设备数据，进入设置页配置云平台 |
 | PWA 安装无效 | 浏览器或部署条件不满足 | 确认使用HTTPS并检查清单、Service Worker与图标请求 |

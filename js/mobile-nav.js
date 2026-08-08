@@ -1,4 +1,4 @@
-/* V5.1.3 移动端底部导航栏 */
+/* V6.0.0 移动端底部导航栏 */
 (function() {
   if (window.innerWidth >= 1024) return;
   const nav = document.createElement('nav');

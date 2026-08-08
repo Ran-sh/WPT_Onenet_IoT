@@ -1,6 +1,6 @@
 # ONENETapp TX/RX 双设备演进路线
 
-状态：网关链路已实验台验证，自建双设备 UI 仍为规划。当前线上 V5.1.3 页面仍以发射端单设备为主。主仓库默认开发分支 `main` 的统一网关候选（`Arduino_Project/ESP32S3_Unified_Gateway/`）已在控制板断功率条件下完成 STM32 ←UART→ ESP32-S3 ←MQTT→ OneNET TX、ESP32-S3 ←BLE→ nRF52840、ESP32-S3 ←MQTT→ OneNET RX 真实上/下行闭环，未发送 START/ON；但 ONENETapp 的 RX 配置、看板、历史、告警、命令确认和 TX/RX 时间对齐曲线尚未实现。
+状态：网关链路已实验台验证，自建双设备 UI 仍为规划。当前 V6.0.0 页面仍以发射端单设备为主。主仓库 `main` 的 V6.0.0 统一网关活动实现（`Arduino_Project/ESP32S3_Unified_Gateway/`）已在控制板断功率条件下完成 STM32 ←UART→ ESP32-S3 ←MQTT→ OneNET TX、ESP32-S3 ←BLE→ nRF52840、ESP32-S3 ←MQTT→ OneNET RX 真实上/下行闭环，未发送 START/ON；但 ONENETapp 的 RX 配置、看板、历史、告警、命令确认和 TX/RX 时间对齐曲线尚未实现。
 
 ## 目标设备
 

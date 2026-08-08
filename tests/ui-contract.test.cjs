@@ -66,10 +66,11 @@ function loadWebModules(initialStorage = {}, fetchImpl) {
   return { api: context.__web, storage };
 }
 
-test('所有页面使用统一的V5工业仪表盘视觉系统', () => {
+test('所有页面使用统一的工业仪表盘视觉系统', () => {
   for (const page of pages) {
     const html = read(`${page}.html`);
-    assert.match(html, /css\/dashboard-v5\.css/, `${page}.html 缺少统一样式`);
+    assert.match(html, /css\/dashboard\.css/, `${page}.html 缺少统一样式`);
+    assert.doesNotMatch(html, /dashboard-v5/, `${page}.html 仍引用旧CSS入口`);
     assert.match(html, new RegExp(`data-page=["']${page}["']`), `${page}.html 缺少页面标识`);
   }
 });
@@ -91,7 +92,7 @@ test('移动导航由共享样式控制并标记当前页面', () => {
 });
 
 test('视觉系统覆盖移动端、可访问焦点和减少动画偏好', () => {
-  const css = read('css/dashboard-v5.css');
+  const css = read('css/dashboard.css');
   assert.match(css, /@media\s*\(max-width:\s*1023px\)/);
   assert.match(css, /:focus-visible/);
   assert.match(css, /prefers-reduced-motion/);
@@ -115,15 +116,21 @@ test('所有受保护页面在业务脚本前加载统一登录守卫', () => {
   assert.match(read('login.html'), /sessionStorage\.setItem/);
 });
 
-test('网页活动资源统一标记V5.1.3', () => {
+test('网页活动资源统一标记V6.0.0', () => {
   for (const page of pages) {
-    assert.match(read(`${page}.html`), /name=["']wpt-version["'][^>]*V5\.1\.3/);
+    assert.match(read(`${page}.html`), /name=["']wpt-version["'][^>]*V6\.0\.0/);
   }
-  assert.match(read('js/config.js'), /V5\.1\.3/);
-  assert.match(read('js/onenet.js'), /V5\.1\.3/);
-  assert.match(read('js/mobile-nav.js'), /V5\.1\.3/);
-  assert.match(read('css/dashboard-v5.css'), /V5\.1\.3/);
-  assert.match(read('README.md'), /V5\.1\.3/);
+  for (const page of ['index', 'monitoring', 'control', 'history', 'alerts', 'settings']) {
+    assert.match(read(`${page}.html`), /WPT Monitor V6\.0\.0/);
+  }
+  assert.match(read('js/auth-guard.js'), /V6\.0\.0/);
+  assert.match(read('js/config.js'), /V6\.0\.0/);
+  assert.match(read('js/onenet.js'), /V6\.0\.0/);
+  assert.match(read('js/mobile-nav.js'), /V6\.0\.0/);
+  assert.match(read('css/dashboard.css'), /V6\.0\.0/);
+  assert.match(read('service-worker.js'), /WPT Monitor V6\.0\.0/);
+  assert.match(read('service-worker.js'), /wpt-v6-0-0-web-1/);
+  assert.match(read('README.md'), /V6\.0\.0/);
 });
 
 test('所有页面允许缩放并提供一致的PWA入口', () => {
@@ -136,12 +143,21 @@ test('所有页面允许缩放并提供一致的PWA入口', () => {
   }
 
   const manifest = JSON.parse(read('manifest.json'));
-  assert.equal(manifest.version, 'V5.1.3');
+  assert.equal(manifest.version, 'V6.0.0');
   assert.equal(manifest.scope, '/');
   assert.ok(manifest.icons.length > 0);
   for (const icon of manifest.icons) {
     assert.ok(fs.existsSync(path.join(root, icon.src.replace(/^\//, ''))), `PWA图标不存在: ${icon.src}`);
   }
+});
+
+test('CSS统一入口为dashboard.css且Service Worker预缓存同步升级', () => {
+  assert.ok(fs.existsSync(path.join(root, 'css', 'dashboard.css')), '缺少统一样式入口');
+  assert.equal(fs.existsSync(path.join(root, 'css', 'dashboard-v5.css')), false, '旧CSS入口必须删除');
+  const worker = read('service-worker.js');
+  assert.match(worker, /BASE \+ '\/css\/dashboard\.css'/);
+  assert.doesNotMatch(worker, /dashboard-v5/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-1'/);
 });
 
 test('登录门控具备失败限速、完整有效期和安全回跳', () => {
