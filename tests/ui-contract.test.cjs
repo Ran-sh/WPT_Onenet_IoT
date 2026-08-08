@@ -158,7 +158,7 @@ test('网页活动资源统一标记V6.0.0', () => {
   assert.match(read('js/mobile-nav.js'), /V6\.0\.0/);
   assert.match(read('css/dashboard.css'), /V6\.0\.0/);
   assert.match(read('service-worker.js'), /WPT Monitor V6\.0\.0/);
-  assert.match(read('service-worker.js'), /wpt-v6-0-0-web-8/);
+  assert.match(read('service-worker.js'), /wpt-v6-0-0-web-9/);
   assert.match(read('README.md'), /V6\.0\.0/);
 });
 
@@ -186,7 +186,7 @@ test('CSS统一入口为dashboard.css且Service Worker预缓存同步升级', ()
   const worker = read('service-worker.js');
   assert.match(worker, /BASE \+ '\/css\/dashboard\.css'/);
   assert.doesNotMatch(worker, /dashboard-v5/);
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-8'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-9'/);
 });
 
 test('登录门控具备失败限速、完整有效期和安全回跳', () => {
@@ -1748,7 +1748,7 @@ test('P6 工业视觉约束：无渐变、纯色基线、响应式与可访问',
 
 test('P7 PWA 缓存版本升级并预缓存新资源', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-8'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-9'/);
   for (const asset of ['js/ui-common.js', 'js/index-page.js', 'js/monitoring-page.js']) {
     assert.match(worker, new RegExp(asset.replace(/[.]/g, '\\.')), asset);
   }
@@ -2403,7 +2403,7 @@ test('R4/R7 设置页结构契约：双端表单、模型摘要、无任意编�
 
 test('R8 SW web-3 预缓存设置页资源，设置样式无渐变', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-8'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-9'/);
   assert.match(worker, /js\/settings-page\.js/);
   const css = read('css/dashboard.css');
   assert.doesNotMatch(css, /gradient\(/);
@@ -3089,7 +3089,7 @@ test('R27 控制页样式无渐变且响应式', () => {
 
 test('R28 SW web-4 预缓存控制模块', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-8'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-9'/);
   assert.match(worker, /js\/control-core\.js/);
   assert.match(worker, /js\/control-page\.js/);
 });
@@ -3334,7 +3334,7 @@ test('R38 control-form 手机布局不换行且可收缩', () => {
 
 test('R39 SW web-5 资源清单同步', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-8'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-9'/);
   for (const asset of ['js/ui-common.js', 'js/index-page.js', 'js/monitoring-page.js', 'js/settings-page.js', 'js/control-core.js', 'js/control-page.js']) {
     assert.match(worker, new RegExp(asset.replace(/[.]/g, '\\.')), asset);
   }
@@ -3674,9 +3674,9 @@ test('R43 图表源时间/双轴/负数/无 Chart 降级', async () => {
   assert.ok(harness2.els.historyTableBody.children.length >= 1);
 });
 
-test('R45 SW 同源全 network-first 与历史资源（web-8）', () => {
+test('R45 SW 同源全 network-first 与历史资源（web-9）', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-8'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-9'/);
   assert.match(worker, /js\/history-core\.js/);
   assert.match(worker, /js\/history-page\.js/);
   assert.match(worker, /url\.origin === self\.location\.origin/);
@@ -3929,9 +3929,9 @@ test('R52e history-page 无重复死代码', () => {
   assert.doesNotMatch(page, /var currentMode/);
 });
 
-test('R52f SW 缓存版本 web-8', () => {
+test('R52f/R64 SW 缓存版本 web-9', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-8'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-9'/);
 });
 
 /* ========== R54-R57 告警引擎与告警中心 ========== */
@@ -4418,14 +4418,15 @@ test('R55b 告警中心双端同步、筛选、确认与清理对话框', async 
 });
 
 test('R56 首页告警摘要：每轮一次评估、隐藏端参与、异常隔离', async () => {
-  const now = Date.now();
+  let txSourceNow = Date.now();
   let txFault = true;
   let txFetch = 0;
   const fetchImpl = async (url) => {
     if (url.includes('/device/detail')) return { ok: true, status: 200, json: async () => ({ code: 0, data: { status: 1 } }) };
     if (url.includes('device_name=rxd')) return { ok: true, status: 200, json: async () => ({ code: 0, data: { list: rxGateOpenItems(Date.now()) } }) };
     txFetch++;
-    const items = fullTxItems(Date.now()).map((item) => item.identifier === 'S' ? { ...item, value: txFault ? 3 : 0 } : item);
+    txSourceNow += 1000;
+    const items = fullTxItems(txSourceNow).map((item) => item.identifier === 'S' ? { ...item, value: txFault ? 3 : 0 } : item);
     return { ok: true, status: 200, json: async () => ({ code: 0, data: items }) };
   };
   const harness = buildIndexDom();
@@ -4482,7 +4483,7 @@ test('R56 监测页告警摘要与异常隔离', async () => {
   assert.equal(harness2.rxSummary.status.textContent, '实时');
 });
 
-test('R57 告警样式与 SW web-8 资源', () => {
+test('R57 告警样式与 SW web-9 资源', () => {
   const html = read('index.html');
   assert.match(html, /id=["']homeAlertSummary["'][^>]*href=["']\/alerts["']/);
   assert.match(html, /js\/alert-engine\.js/);
@@ -4499,7 +4500,78 @@ test('R57 告警样式与 SW web-8 资源', () => {
   assert.match(css, /@media\s*\(max-width:\s*520px\)/);
   assert.match(css, /:focus-visible/);
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-8'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-9'/);
   assert.match(worker, /js\/alert-engine\.js/);
   assert.match(worker, /js\/alerts-page\.js/);
+});
+
+/* ========== R62-R63 本轮 RED 契约（R64 已在既有 SW 区域映射；生产代码未改，保持 RED） ========== */
+
+test('R62 历史页未配置/比较配置不完整时不发云请求、给出明确提示', async () => {
+  const txOnly = JSON.stringify({ version: 1, tx: JSON.parse(DUAL_CONFIG).tx, rx: {} });
+
+  /* (a) 完全无配置、默认 tx：fetch 0 次、明确提示、表格 0 行、导出禁用 */
+  let fetchesA = 0;
+  const h1 = buildHistoryDom(undefined);
+  loadHistoryPage(h1, {}, async () => { fetchesA++; throw new Error('不应发起云请求'); });
+  await flushAsync();
+  assert.equal(fetchesA, 0);
+  assert.equal(h1.els.historyStatus.textContent, '该端点未配置，请前往设置');
+  assert.equal(h1.els.historyTableBody.children.length, 0);
+  assert.equal(h1.els.historyExportBtn.disabled, true);
+
+  /* (b) 同一无配置 harness 切到 compare：fetch 仍 0 次、提示双端均未配置 */
+  h1.els.historyModeSelect.value = 'compare';
+  h1.els.historyModeSelect.dispatch('change');
+  await flushAsync();
+  assert.equal(fetchesA, 0);
+  assert.equal(h1.els.historyStatus.textContent, '双端均未配置，请前往设置');
+
+  /* (c) 仅 TX 完整配置且初始 compare：fetch 0 次、提示需先配置 TX 与 RX、表格 0 行、导出禁用 */
+  let fetchesC = 0;
+  const h2 = buildHistoryDom(undefined, { historyModeSelect: 'compare' });
+  loadHistoryPage(h2, { iot_onenet_devices_v1: txOnly }, async () => { fetchesC++; throw new Error('不应发起云请求'); });
+  await flushAsync();
+  assert.equal(fetchesC, 0);
+  assert.equal(h2.els.historyStatus.textContent, '双端比较需先配置 TX 与 RX');
+  assert.equal(h2.els.historyTableBody.children.length, 0);
+  assert.equal(h2.els.historyExportBtn.disabled, true);
+});
+
+test('R63 告警页无配置/仅部分配置时只请求已配置端点并给出明确提示', async () => {
+  const txOnly = JSON.stringify({ version: 1, tx: JSON.parse(DUAL_CONFIG).tx, rx: {} });
+
+  /* (a) 完全无配置：fetch 0 次、仅显示本机报警记录 */
+  let fetchesA = 0;
+  const h1 = buildAlertsDom();
+  loadAlertsPage(h1, {}, async () => { fetchesA++; throw new Error('不应发起云请求'); });
+  await flushAsync();
+  assert.equal(fetchesA, 0);
+  assert.equal(h1.els.alertPollStatus.textContent, '未配置云端连接，仅显示本机报警记录');
+
+  /* (b) 仅 TX 完整配置、RX 为空：只出现 TX 请求、提示部分端点未配置 */
+  const callsB = [];
+  const h2 = buildAlertsDom();
+  loadAlertsPage(h2, { iot_onenet_devices_v1: txOnly }, async (url) => {
+    callsB.push(url);
+    if (url.includes('/device/detail')) return { ok: true, status: 200, json: async () => ({ code: 0, data: { status: 1 } }) };
+    return { ok: true, status: 200, json: async () => ({ code: 0, data: fullTxItems(Date.now()) }) };
+  });
+  await flushAsync();
+  assert.ok(callsB.length > 0);
+  assert.ok(callsB.some((u) => u.includes('device_name=txd')));
+  assert.ok(callsB.every((u) => !u.includes('device_name=rxd')));
+  assert.equal(h2.els.alertPollStatus.textContent, '部分端点未配置，已同步可用端点');
+
+  /* (c) 仅 TX 配置但 TX 请求抛错：不得出现 RX 请求、保持现有报警 */
+  const callsC = [];
+  const h3 = buildAlertsDom();
+  loadAlertsPage(h3, { iot_onenet_devices_v1: txOnly }, async (url) => {
+    callsC.push(url);
+    throw new Error('tx down');
+  });
+  await flushAsync();
+  assert.ok(callsC.length > 0);
+  assert.ok(callsC.every((u) => !u.includes('device_name=rxd')));
+  assert.equal(h3.els.alertPollStatus.textContent, '已配置端点数据不可用，保持现有报警');
 });
