@@ -3,7 +3,7 @@
  * 纯数据存储在读取时重新补回频率换算函数。
  */
 
-const DATA_MODEL_VERSION = 3;
+const DATA_MODEL_VERSION = 4;
 const MAX_MODEL_ITEMS = 24;
 const MODEL_COLORS = ['orange', 'blue', 'slate', 'cyan', 'teal', 'yellow', 'red', 'green', 'purple', 'pink'];
 const MODEL_TYPES = ['bool', 'int32', 'float', 'double', 'string'];
@@ -19,14 +19,51 @@ function frequencyToCloud(value) {
 const DEFAULT_DATA_MODEL = {
     version: DATA_MODEL_VERSION,
     sensors: [
-        { id: 'voltage', name: '电压', icon: 'fa-bolt', color: 'cyan', unit: 'V', cloudKey: 'V', min: 0, max: 50, dataType: 'float', step: 0.01 },
-        { id: 'current', name: '电流', icon: 'fa-bolt', color: 'yellow', unit: 'A', cloudKey: 'I', min: 0, max: 5, dataType: 'float', step: 0.001 },
-        { id: 'freq', name: '频率', icon: 'fa-wave-square', color: 'blue', unit: 'kHz', cloudKey: 'F', min: 20, max: 200, dataType: 'int32', step: 0.1, fromCloud: frequencyFromCloud }
+        { id: 'voltage', name: '电压', icon: 'fa-bolt', color: 'cyan', unit: 'V', cloudKey: 'V', min: 0, max: 50, dataType: 'double', step: 0.01 },
+        { id: 'current', name: '电流', icon: 'fa-bolt', color: 'yellow', unit: 'A', cloudKey: 'I', min: 0, max: 5, dataType: 'double', step: 0.001 },
+        { id: 'freq', name: '频率', icon: 'fa-wave-square', color: 'blue', unit: 'kHz', cloudKey: 'F', min: 20, max: 200, dataType: 'int32', step: 0.1, fromCloud: frequencyFromCloud },
+        { id: 'state', name: '状态', icon: 'fa-microchip', color: 'slate', unit: '', cloudKey: 'S', min: 0, max: 3, dataType: 'int32', step: 1 }
     ],
     controls: [
         { id: 'switch', name: '启停控制', icon: 'fa-power-off', color: 'red', cloudKey: 'Switch', dataType: 'bool', step: 1 },
         { id: 'setfreq', name: '频率设置', icon: 'fa-sliders-h', color: 'blue', unit: 'kHz', cloudKey: 'SetFreq', dataType: 'int32', step: 0.1, min: 20, max: 200, toCloud: frequencyToCloud, fromCloud: frequencyFromCloud }
     ]
+};
+
+/* RX 固定物模型：范围、类型、云端键不允许被本地缓存覆盖（安全边界）。 */
+const DEFAULT_DEVICE_MODELS = {
+    tx: DEFAULT_DATA_MODEL,
+    rx: {
+        version: DATA_MODEL_VERSION,
+        sensors: [
+            { id: 'rx_imon', name: '电流监视电压', icon: 'fa-bolt', color: 'cyan', unit: 'V', cloudKey: 'RX_IMon', dataType: 'double', min: -3.3, max: 3.3, step: 0.001 },
+            { id: 'rx_current_ua', name: '刺激电流', icon: 'fa-bolt', color: 'yellow', unit: 'uA', cloudKey: 'RX_Current_uA', dataType: 'double', min: -1000, max: 1000, step: 0.1 },
+            { id: 'rx_bonep', name: '正向电压', icon: 'fa-bolt', color: 'teal', unit: 'V', cloudKey: 'RX_BoneP', dataType: 'double', min: 0, max: 3.3, step: 0.001 },
+            { id: 'rx_bonen', name: '负向电压', icon: 'fa-bolt', color: 'purple', unit: 'V', cloudKey: 'RX_BoneN', dataType: 'double', min: 0, max: 3.3, step: 0.001 },
+            { id: 'rx_bonev', name: '骨电压', icon: 'fa-bolt', color: 'blue', unit: 'V', cloudKey: 'RX_BoneV', dataType: 'double', min: -3.3, max: 3.3, step: 0.001 },
+            { id: 'rx_resistance', name: '阻抗', icon: 'fa-microchip', color: 'slate', unit: 'ohm', cloudKey: 'RX_Resistance', dataType: 'int32', min: -10000000, max: 10000000, step: 1 },
+            { id: 'rx_vout', name: '输出电压', icon: 'fa-bolt', color: 'orange', unit: 'V', cloudKey: 'RX_Vout', dataType: 'double', min: 0, max: 36.3, step: 0.01 },
+            { id: 'rx_limit', name: '限流', icon: 'fa-lock', color: 'red', unit: '', cloudKey: 'RX_Limit', dataType: 'bool', step: 1 },
+            { id: 'rx_stim', name: '刺激中', icon: 'fa-bolt', color: 'yellow', unit: '', cloudKey: 'RX_Stim', dataType: 'bool', step: 1 },
+            { id: 'rx_connected', name: 'BLE连接', icon: 'fa-link', color: 'green', unit: '', cloudKey: 'RX_Connected', dataType: 'bool', step: 1 },
+            { id: 'rx_valid', name: '数据有效', icon: 'fa-check', color: 'green', unit: '', cloudKey: 'RX_Valid', dataType: 'bool', step: 1 },
+            { id: 'rx_fault_flags', name: '故障标志', icon: 'fa-exclamation-triangle', color: 'red', unit: '', cloudKey: 'RX_FaultFlags', dataType: 'int32', min: 0, max: 511, step: 1 },
+            { id: 'rx_fault_reason', name: '故障说明', icon: 'fa-comment', color: 'red', unit: '', cloudKey: 'RX_FaultReason', dataType: 'string', step: 1 },
+            { id: 'rx_state', name: '接收状态', icon: 'fa-microchip', color: 'slate', unit: '', cloudKey: 'RX_State', dataType: 'int32', min: 0, max: 5, step: 1 },
+            { id: 'rx_ble_online', name: 'BLE在线', icon: 'fa-bluetooth', color: 'blue', unit: '', cloudKey: 'RX_BleOnline', dataType: 'bool', step: 1 },
+            { id: 'rx_mqtt_online', name: 'MQTT在线', icon: 'fa-cloud', color: 'cyan', unit: '', cloudKey: 'RX_MqttOnline', dataType: 'bool', step: 1 },
+            { id: 'rx_gateway_online', name: '网关在线', icon: 'fa-server', color: 'slate', unit: '', cloudKey: 'RX_GatewayOnline', dataType: 'bool', step: 1 },
+            { id: 'rx_wifi_online', name: 'WiFi在线', icon: 'fa-wifi', color: 'green', unit: '', cloudKey: 'RX_WifiOnline', dataType: 'bool', step: 1 },
+            { id: 'rx_telemetry_fresh', name: '遥测新鲜', icon: 'fa-clock', color: 'green', unit: '', cloudKey: 'RX_TelemetryFresh', dataType: 'bool', step: 1 },
+            { id: 'rx_safe', name: '启动门控', icon: 'fa-shield', color: 'green', unit: '', cloudKey: 'RX_Safe', dataType: 'bool', step: 1 },
+            { id: 'rx_command', name: '命令', icon: 'fa-terminal', color: 'slate', unit: '', cloudKey: 'RX_Command', dataType: 'string', step: 1 },
+            { id: 'rx_command_result', name: '命令结果', icon: 'fa-comment', color: 'slate', unit: '', cloudKey: 'RX_CommandResult', dataType: 'string', step: 1 },
+            { id: 'rx_command_sequence', name: '命令序号', icon: 'fa-hashtag', color: 'slate', unit: '', cloudKey: 'RX_CommandSequence', dataType: 'int32', min: 0, max: 2147483647, step: 1 }
+        ],
+        controls: [
+            { id: 'command', name: '接收端命令', icon: 'fa-terminal', color: 'slate', unit: '', cloudKey: 'RX_Command', dataType: 'string', step: 1 }
+        ]
+    }
 };
 
 /* 仅允许使用已知图标类，避免本地缓存被篡改后注入属性。 */
@@ -127,6 +164,9 @@ function normalizeGroup(savedItems, defaults) {
     const saved = Array.isArray(savedItems) ? savedItems.slice(0, MAX_MODEL_ITEMS) : [];
     const used = new Set();
     const seenIds = new Set();
+    /* 默认 TX 固定协议项：cloudKey/类型/单位/范围/步进/换算一律以 DEFAULT_DATA_MODEL 为准，
+     * 旧缓存只能覆盖 name/icon/color 等纯显示字段，防止 V/I/F/S/Switch/SetFreq 脱离固定协议。 */
+    const FIXED_PROTOCOL_IDS = { voltage: 1, current: 1, freq: 1, state: 1, switch: 1, setfreq: 1 };
     const result = defaults.map(function(defaultItem) {
         const index = saved.findIndex(function(item) { return item && item.id === defaultItem.id; });
         const merged = sanitizeModelItem(index >= 0 ? Object.assign(copyFields(defaultItem), copyFields(saved[index])) : defaultItem, defaultItem);
@@ -139,6 +179,22 @@ function normalizeGroup(savedItems, defaults) {
             merged.step = 0.1;
             merged.fromCloud = frequencyFromCloud;
             if (merged.id === 'setfreq') merged.toCloud = frequencyToCloud;
+        }
+        if (merged.id === 'state') {
+            merged.min = 0;
+            merged.max = 3;
+            merged.step = 1;
+            merged.dataType = 'int32';
+        }
+        if (FIXED_PROTOCOL_IDS[merged.id]) {
+            merged.cloudKey = defaultItem.cloudKey;
+            merged.dataType = defaultItem.dataType;
+            merged.unit = defaultItem.unit;
+            merged.min = defaultItem.min;
+            merged.max = defaultItem.max;
+            merged.step = defaultItem.step;
+            merged.fromCloud = defaultItem.fromCloud;
+            merged.toCloud = defaultItem.toCloud;
         }
         seenIds.add(merged.id);
         return merged;
@@ -163,7 +219,15 @@ function normalizeDataModel(model) {
     };
 }
 
-function getDataModel() {
+function getDataModel(deviceKey) {
+    if (deviceKey === 'rx') {
+        /* RX 模型固定返回，不做任何本地合并，防止安全边界被缓存放宽。 */
+        return {
+            version: DATA_MODEL_VERSION,
+            sensors: DEFAULT_DEVICE_MODELS.rx.sensors.map(function (item) { return Object.assign({}, item); }),
+            controls: DEFAULT_DEVICE_MODELS.rx.controls.map(function (item) { return Object.assign({}, item); })
+        };
+    }
     return normalizeDataModel(readLocalJSON('iot_data_model', null));
 }
 

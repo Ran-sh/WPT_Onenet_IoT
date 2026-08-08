@@ -4,566 +4,123 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="wpt-version" content="V6.0.0">
-    <title>WPT Monitor - 历史查询</title>
-    <script src="js/auth-guard.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
     <meta name="theme-color" content="#102832">
     <link rel="manifest" href="/manifest.json">
     <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <title>WPT Monitor - 历史</title>
+    <script src="js/auth-guard.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="css/dashboard.css">
-    <script src="js/config.js"></script>
-    <script src="js/onenet.js"></script>
-    <style>
-        body { background-color: #f4f7fb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        .card { background-color: white; border-radius: 1.25rem; box-shadow: 0 4px 10px rgba(0,0,0,0.02); }
-        @media (max-width: 1023px) {
-            .hist-row td { white-space: nowrap; }
-            .hist-row td:first-child { width: 35%; }
-            .hist-row td:nth-child(2) { width: 40%; }
-            .hist-row td:nth-child(3) { width: 25%; }
-        }
-    </style>
 </head>
-<body data-page="history" class="flex h-screen overflow-hidden bg-[#f4f7fb]" style="padding-bottom:env(safe-area-inset-bottom, 0px)">
+<body data-page="history" class="flex h-screen overflow-hidden">
 
     <!-- PC Sidebar -->
-    <aside class="w-64 bg-white shadow-lg hidden lg:flex flex-col z-50 flex-shrink-0 relative h-screen">
-        <div class="h-20 border-b border-gray-100 flex items-center justify-center">
-            <h1 class="text-xl font-extrabold text-[#1a1f36] tracking-tight">WPT Monitor</h1>
+    <aside class="w-64 flex-col z-50 flex-shrink-0 relative h-screen hidden lg:flex">
+        <div class="h-20 border-b flex items-center justify-center">
+            <h1 class="text-xl font-extrabold tracking-tight">WPT Monitor</h1>
         </div>
         <nav class="flex-1 py-6 space-y-2 px-4 overflow-y-auto custom-scrollbar">
-            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/'>
+            <a class="nav-item flex items-center px-4 py-3 rounded-xl font-bold" href="/">
                 <i class="fas fa-home w-6 text-center mr-3"></i> 首页
             </a>
-            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/monitoring'>
+            <a class="nav-item flex items-center px-4 py-3 rounded-xl font-bold" href="/monitoring">
                 <i class="fas fa-chart-bar w-6 text-center mr-3"></i> 监测
             </a>
-            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/control'>
+            <a class="nav-item flex items-center px-4 py-3 rounded-xl font-bold" href="/control">
                 <i class="fas fa-sliders-h w-6 text-center mr-3"></i> 控制
             </a>
-            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/history'>
+            <a class="nav-item flex items-center px-4 py-3 rounded-xl font-bold" href="/history">
                 <i class="fas fa-chart-line w-6 text-center mr-3"></i> 历史
             </a>
-            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/alerts'>
+            <a class="nav-item flex items-center px-4 py-3 rounded-xl font-bold" href="/alerts">
                 <i class="fas fa-bell w-6 text-center mr-3"></i> 报警
             </a>
-            <a class='nav-item flex items-center px-4 py-3 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-bold transition' href='/settings'>
+            <a class="nav-item flex items-center px-4 py-3 rounded-xl font-bold" href="/settings">
                 <i class="fas fa-cog w-6 text-center mr-3"></i> 设置
             </a>
         </nav>
-        <div class="p-4 border-t border-gray-100 absolute bottom-0 w-full bg-white">
-            <div class="text-xs text-center text-gray-400 font-medium">WPT Monitor V6.0.0</div>
+        <div class="p-4 border-t absolute bottom-0 w-full">
+            <div class="text-xs text-center font-medium">WPT Monitor V6.0.0</div>
         </div>
     </aside>
 
     <!-- Main Content -->
     <div class="flex-1 flex flex-col h-screen overflow-y-auto w-full relative custom-scrollbar">
 
-    <!-- Header -->
-    <header class="bg-white px-10 py-6 pb-6 flex items-center justify-between border-b border-gray-100 z-10 relative">
-        <a href="javascript:history.back()" class="text-gray-400 w-8 h-8 flex items-center justify-center -ml-2 active:bg-gray-100 rounded-full transition">
-            <i class="fas fa-chevron-left text-lg"></i>
-        </a>
-        <div class="flex flex-col items-center">
-            <h1 class="text-xl font-bold text-gray-900 tracking-tight">历史数据查询</h1>
-            <span id="deviceStatus" class="text-xs font-bold text-gray-400 mt-0.5 flex items-center hidden">
-                <span class="w-1.5 h-1.5 bg-yellow-500 rounded-full mr-1"></span> 设备离线
-            </span>
-        </div>
-        <div class="flex items-center space-x-1.5 text-blue-500 cursor-pointer active:opacity-70 transition" onclick="exportHistoryData()">
-            <i class="fas fa-file-export text-sm"></i>
-            <span class="text-sm font-bold tracking-wide">导出</span>
-        </div>
-    </header>
-
-    <main class="px-10 py-5 space-y-6">
-        <!-- Custom Toast -->
-        <div id="toast" class="fixed top-20 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-10 py-3 rounded-full text-sm font-bold shadow-lg z-[110] transition-all duration-300 opacity-0 translate-y-[-20px] pointer-events-none">
-            <!-- Toast message -->
-        </div>
-
-        <!-- Filter Tabs -->
-        <div id="filterTabsContainer" class="flex bg-gray-100/80 p-1 rounded-xl border border-gray-200/50 overflow-x-auto custom-scrollbar"></div>
-
-        <!-- Trend Chart -->
-        <div class="card p-5 border border-gray-50">
-            <div class="flex justify-between items-center mb-6">
-                <h3 id="chartTitle" class="font-bold text-gray-900 tracking-tight text-base">变化曲线</h3>
+        <!-- Header -->
+        <header class="h-12 lg:h-16 px-3 lg:px-8 flex items-center justify-between border-b z-10 relative flex-shrink-0 history-header">
+            <div class="flex items-center space-x-2 lg:space-x-4">
+                <h1 class="text-base lg:text-xl font-bold tracking-tight history-title">云端历史</h1>
             </div>
-            
-            <div id="historyChartWrap" class="h-56 w-full relative transition-opacity duration-300">
-                <canvas id="historyChart"></canvas>
+            <div class="flex items-center space-x-2 lg:space-x-4 history-header-actions">
+                <span id="historyStatus" class="summary-chip" aria-live="polite">--</span>
+                <button id="historyRefreshBtn" class="icon-btn" type="button" aria-label="刷新历史">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+                <button id="historyExportBtn" class="btn btn-ghost" type="button" disabled>导出 CSV</button>
+                <div class="user-badge history-user-badge">
+                    <i class="fas fa-user-shield text-sm"></i>
+                </div>
             </div>
-        </div>
+        </header>
 
-        <!-- Data Table -->
-        <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-            <div class="px-4 lg:px-6 py-3 border-b border-gray-100 bg-gray-50/50 text-center">
-                <h3 class="font-bold text-gray-800 text-sm">历史记录</h3>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-center border-collapse">
-                    <thead>
-                        <tr class="bg-gray-50 border-b border-gray-100 text-xs text-gray-500 tracking-wider whitespace-nowrap">
-                            <th class="px-2 lg:px-6 py-2 text-[11px] lg:text-xs font-semibold text-center">采样时间</th>
-                            <th class="px-2 lg:px-6 py-2 text-[11px] lg:text-xs font-semibold text-center" id="valueHeader">数值</th>
-                            <th class="px-2 lg:px-6 py-2 text-[11px] lg:text-xs font-semibold text-center">状态</th>
-                        </tr>
-                    </thead>
-                    <tbody id="dataTableBody" class="divide-y divide-gray-100">
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </main>
+        <main class="history-main px-4 lg:px-10 py-5 space-y-6">
+            <section class="history-controls">
+                <div class="history-control">
+                    <label for="historyModeSelect">模式</label>
+                    <select id="historyModeSelect">
+                        <option value="tx">发射端 TX</option>
+                        <option value="rx">接收端 RX</option>
+                        <option value="compare">双端比较</option>
+                    </select>
+                </div>
+                <div id="historyMetricSelectors" class="history-metric-selectors">
+                    <div id="historyTxSelector" class="history-control">
+                        <label for="historyTxMetricSelect">TX 指标</label>
+                        <select id="historyTxMetricSelect"></select>
+                    </div>
+                    <div id="historyRxSelector" class="history-control">
+                        <label for="historyRxMetricSelect">RX 指标</label>
+                        <select id="historyRxMetricSelect"></select>
+                    </div>
+                </div>
+                <div class="history-control">
+                    <label for="historyRangeSelect">范围</label>
+                    <select id="historyRangeSelect">
+                        <option value="1">最近 1 小时</option>
+                        <option value="6">最近 6 小时</option>
+                        <option value="24">最近 24 小时</option>
+                    </select>
+                </div>
+            </section>
 
-    
+            <section class="history-panel">
+                <h2>趋势图</h2>
+                <div id="historyChartWrap" class="history-chart-wrap">
+                    <div id="historyEmpty" class="history-empty" hidden>暂无云历史</div>
+                    <canvas id="historyChart"></canvas>
+                </div>
+            </section>
 
-    <script>
-        const currentModel = getDataModel();
-        const sensors = currentModel.sensors;
-        
-        const CHART_COLORS = {
-            'orange': '#f97316', 'blue': '#3b82f6', 'slate': '#64748b', 'cyan': '#06b6d4',
-            'teal': '#14b8a6', 'yellow': '#eab308', 'red': '#ef4444', 'green': '#22c55e',
-            'purple': '#a855f7', 'pink': '#ec4899'
-        };
-        const CHART_BG_COLORS = {
-            'orange': 'rgba(249, 115, 22, 0.25)', 'blue': 'rgba(59, 130, 246, 0.25)',
-            'slate': 'rgba(100, 116, 139, 0.25)', 'cyan': 'rgba(6, 182, 212, 0.25)',
-            'teal': 'rgba(20, 184, 166, 0.25)', 'yellow': 'rgba(234, 179, 8, 0.25)',
-            'red': 'rgba(239, 68, 68, 0.25)', 'green': 'rgba(34, 197, 94, 0.25)',
-            'purple': 'rgba(168, 85, 247, 0.25)', 'pink': 'rgba(236, 72, 153, 0.25)'
-        };
-
-        const historyChartWrap = document.getElementById('historyChartWrap');
-        const chartTitle = document.getElementById('chartTitle');
-        const ctx = document.getElementById('historyChart').getContext('2d');
-
-        function createGradient(color) {
-            const gradient = ctx.createLinearGradient(0, 0, 0, 200);
-            gradient.addColorStop(0, color);
-            gradient.addColorStop(1, 'rgba(255,255,255,0)');
-            return gradient;
-        }
-
-        let historyChart;
-        let metricConfig = {};
-        let labels = [];
-        let fullTimes = [];
-        
-        let toastTimeout;
-        function showToast(message) {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.classList.remove('opacity-0', 'translate-y-[-20px]');
-            
-            clearTimeout(toastTimeout);
-            toastTimeout = setTimeout(() => {
-                toast.classList.add('opacity-0', 'translate-y-[-20px]');
-            }, 2500);
-        }
-
-        function toCsvCell(value) {
-            let cell = value === undefined || value === null ? '' : String(value);
-            /* 避免导出的CSV在表格软件中被解释为公式。 */
-            var numeric = /^-?(?:\d+\.?\d*|\.\d+)$/.test(cell);
-            if (!numeric && /^[=+\-@]/.test(cell)) cell = "'" + cell;
-            return '"' + cell.replace(/"/g, '""') + '"';
-        }
-
-        function exportHistoryData() {
-            let historyData = readLocalArray('iot_history_data').filter(item => item && typeof item === 'object' && item.data && typeof item.data === 'object');
-            
-            // Filter for the last 24 hours to match the UI
-            const now = new Date();
-            const twentyFourHoursAgo = now.getTime() - (24 * 60 * 60 * 1000);
-            const displayData = historyData.filter(item => {
-                let itemTime = item.timestamp;
-                if (!itemTime && item.fullTime) {
-                    itemTime = new Date(String(item.fullTime).replace(/-/g, '/')).getTime();
-                }
-                return itemTime >= twentyFourHoursAgo;
-            });
-
-            if (displayData.length === 0) {
-                showToast('暂无历史数据可导出');
-                return;
-            }
-
-            try {
-                // Prepare CSV content with BOM for Excel compatibility
-                let csvContent = '\uFEFF'; 
-                
-                // Build Headers
-                const headers = ['记录时间', '完整时间'];
-                sensors.forEach(s => {
-                    headers.push(toCsvCell(`${s.name}(${s.unit})`));
-                });
-                csvContent += headers.join(',') + '\n';
-
-                // Build Rows
-                displayData.forEach(item => {
-                    const row = [
-                        toCsvCell(item.time || ''),
-                        toCsvCell(item.fullTime || '')
-                    ];
-                    sensors.forEach(s => {
-                        const val = item.data[s.id];
-                        row.push(toCsvCell(val));
-                    });
-                    csvContent += row.join(',') + '\n';
-                });
-
-                const dateStr = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}`;
-                const fileName = `监控历史数据_${dateStr}.csv`;
-                
-                // 检测是否在 Android 原生 WebView 环境中，并注入了自定义 Javascript 接口
-                if (true) {
-                    // Fallback: 普通浏览器环境下的下载处理
-                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    
-                    link.setAttribute('href', url);
-                    link.setAttribute('download', fileName);
-                    link.style.visibility = 'hidden';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    URL.revokeObjectURL(url);
-                    
-                    showToast('导出成功');
-                }
-            } catch (err) { showToast('导出失败，请检查系统权限'); }
-        }
-        
-        const urlParams = new URLSearchParams(window.location.search);
-        let currentMetric = urlParams.get('metric') || (sensors.length > 0 ? sensors[0].id : null);
-
-        function initTabs() {
-            const container = document.getElementById('filterTabsContainer');
-            sensors.forEach((s, index) => {
-                const isSelected = s.id === currentMetric;
-                container.innerHTML += `
-                    <button type="button" data-metric="${s.id}" class="metric-tab flex-1 py-2 px-3 text-sm font-bold rounded-lg transition-all whitespace-nowrap ${isSelected ? 'bg-white text-blue-600 shadow-[0_2px_8px_rgba(0,0,0,0.04)]' : 'text-gray-500 hover:text-gray-700'}">
-                        <i class="fas ${s.icon} mr-1"></i> ${s.name}
-                    </button>
-                `;
-            });
-
-            document.querySelectorAll('.metric-tab').forEach(tab => {
-                tab.addEventListener('click', function() {
-                    setMetric(this.dataset.metric);
-                });
-            });
-        }
-
-        function loadData() {
-            let historyData = readLocalArray('iot_history_data').filter(item => item && typeof item === 'object' && item.data && typeof item.data === 'object');
-            
-            const now = new Date();
-            const twentyFourHoursAgo = now.getTime() - (24 * 60 * 60 * 1000);
-            
-            const displayData = historyData.filter(item => {
-                let itemTime = item.timestamp;
-                if (!itemTime && item.fullTime) {
-                    itemTime = new Date(String(item.fullTime).replace(/-/g, '/')).getTime();
-                }
-                return itemTime >= twentyFourHoursAgo;
-            });
-
-            labels = displayData.map(item => String(item.time || '').slice(0, 16));
-            fullTimes = displayData.map(item => String(item.fullTime || '').slice(0, 32));
-            
-            if (labels.length === 0) {
-                labels.push(`${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`);
-                fullTimes.push(`${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,'0')}-${now.getDate().toString().padStart(2,'0')} ${labels[0]}:00`);
-            }
-
-            sensors.forEach(s => {
-                let dataArr = displayData.map(item => {
-                    const value = Number(item.data[s.id]);
-                    return Number.isFinite(value) ? value : null;
-                });
-                if (dataArr.length === 0) dataArr.push(null);
-
-                const vals = dataArr.filter(v => v !== null);
-                const dMin = vals.length ? Math.min(...vals) : s.min;
-                const dMax = vals.length ? Math.max(...vals) : s.max;
-                const dRange = dMax - dMin || 1;
-                const pad = dRange * 0.25;
-
-                metricConfig[s.id] = {
-                    label: s.name,
-                    title: `${s.name}变化曲线 (${s.unit})`,
-                    data: dataArr,
-                    unit: s.unit,
-                    borderColor: CHART_COLORS[s.color] || CHART_COLORS['slate'],
-                    gradientTop: CHART_BG_COLORS[s.color] || CHART_BG_COLORS['slate'],
-                    min: Math.max(0, dMin - pad),
-                    max: dMax + pad,
-                    stepSize: Math.max(1, Math.ceil(dRange / 5)),
-                    thMin: s.min,
-                    thMax: s.max
-                };
-            });
-            
-            if (!metricConfig[currentMetric]) {
-                currentMetric = sensors.length > 0 ? sensors[0].id : null;
-            }
-        }
-
-        function initChart() {
-            if (!currentMetric) return;
-            loadData();
-            initTabs();
-            const initialConfig = metricConfig[currentMetric];
-
-            historyChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: initialConfig.label,
-                        data: initialConfig.data,
-                        borderColor: initialConfig.borderColor,
-                        backgroundColor: createGradient(initialConfig.gradientTop),
-                        fill: true,
-                        tension: 0.4, 
-                        pointRadius: labels.length > 50 ? 0 : 3.5, 
-                        pointBackgroundColor: '#ffffff',
-                        pointBorderColor: initialConfig.borderColor,
-                        pointBorderWidth: 2,
-                        pointHoverRadius: 6,
-                        borderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    animation: { duration: 450, easing: 'easeInOutQuart' },
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                            backgroundColor: 'rgba(0,0,0,0.85)',
-                            titleFont: { size: 11 },
-                            bodyFont: { size: 12, weight: 'bold' },
-                            padding: 10,
-                            displayColors: false,
-                            cornerRadius: 8,
-                        }
-                    },
-                    scales: {
-                        y: {
-                            min: initialConfig.min,
-                            max: initialConfig.max,
-                            grid: { color: '#f1f5f9', drawBorder: false, tickLength: 0 },
-                            ticks: { font: { size: 10, weight: '600' }, color: '#cbd5e1', stepSize: initialConfig.stepSize, padding: 8 }
-                        },
-                        x: {
-                            grid: { display: false, drawBorder: false },
-                            ticks: { 
-                                font: { size: 10, weight: '600' }, color: '#cbd5e1', padding: 8,
-                                maxRotation: 45, minRotation: 45, autoSkip: true, maxTicksLimit: 12 
-                            }
-                        }
-                    },
-                    interaction: { intersect: false, mode: 'index' }
-                }
-            });
-
-            renderTable(currentMetric);
-            updateTabStyles(currentMetric);
-        }
-
-        function renderTable(metricKey) {
-            const dataTableBody = document.getElementById('dataTableBody');
-            const selected = metricConfig[metricKey];
-            if (!selected) return;
-
-            const validDataCount = selected.data.filter(d => d !== null).length;
-            if (validDataCount === 0) {
-                dataTableBody.innerHTML = '<tr><td colspan="3" class="px-2 py-8 text-center text-gray-400 text-xs">暂无历史数据</td></tr>';
-                return;
-            }
-            
-            let html = '';
-            const thMin = selected.thMin;
-            const thMax = selected.thMax;
-
-            for (let i = selected.data.length - 1; i >= 0; i--) {
-                const value = selected.data[i];
-                if (value === null) continue;
-                
-                const fullTime = fullTimes[i] || labels[i];
-                const parts = fullTime.split(' ');
-                const dateStr = parts[0] || '';
-                const timeStr = parts[1] || fullTime;
-
-                const isExceed = (value < thMin || value > thMax);
-                const finalColor = isExceed ? 'text-red-500' : 'text-gray-800';
-
-                const sensorConfig = currentModel.sensors.find(s => s.id === metricKey) || {};
-                const decimals = typeof getDecimals === 'function' ? getDecimals(sensorConfig.dataType, sensorConfig.step) : 1;
-
-                html += `
-                <tr class="hover:bg-gray-50 transition-colors hist-row">
-                    <td class="px-2 lg:px-6 py-1.5 text-center align-middle hist-time">
-                        <div class="flex flex-col items-center leading-tight">
-                            <span class="text-[9px] lg:text-xs text-gray-400 font-mono">${escapeHtml(dateStr)}</span>
-                            <span class="text-[10px] lg:text-sm text-gray-500 font-mono">${escapeHtml(timeStr)}</span>
-                        </div>
-                    </td>
-                    <td class="px-2 lg:px-6 py-1.5 text-center">
-                        <span class="text-[11px] lg:text-sm font-bold ${finalColor}">${Number(value).toFixed(decimals)}</span>
-                    </td>
-                    <td class="px-2 lg:px-6 py-1.5 text-center">
-                        <span class="inline-flex items-center justify-center w-5 h-5 lg:w-6 lg:h-6 rounded-full text-[10px] lg:text-xs font-bold ${isExceed ? 'bg-red-100 text-red-500' : 'bg-green-100 text-green-500'}">${isExceed ? '✕' : '✓'}</span>
-                    </td>
-                </tr>`;
-            }
-            dataTableBody.innerHTML = html;
-        }
-
-        function updateTabStyles(metricKey) {
-            if (!metricConfig[metricKey]) return;
-            chartTitle.textContent = metricConfig[metricKey].title;
-            document.getElementById('valueHeader').textContent = '数值 (' + metricConfig[metricKey].unit + ')';
-            document.querySelectorAll('.metric-tab').forEach(tab => {
-                if (tab.dataset.metric === metricKey) {
-                    tab.classList.add('bg-white', 'text-blue-600', 'shadow-[0_2px_8px_rgba(0,0,0,0.04)]');
-                    tab.classList.remove('text-gray-500', 'hover:text-gray-700');
-                } else {
-                    tab.classList.remove('bg-white', 'text-blue-600', 'shadow-[0_2px_8px_rgba(0,0,0,0.04)]');
-                    tab.classList.add('text-gray-500', 'hover:text-gray-700');
-                }
-            });
-        }
-
-        function setMetric(metricKey) {
-            if (currentMetric === metricKey || !metricConfig[metricKey]) return;
-            currentMetric = metricKey;
-            
-            historyChartWrap.classList.add('opacity-70');
-            const selected = metricConfig[metricKey];
-
-            historyChart.data.datasets[0].label = selected.label;
-            historyChart.data.datasets[0].data = selected.data;
-            historyChart.data.datasets[0].borderColor = selected.borderColor;
-            historyChart.data.datasets[0].pointBorderColor = selected.borderColor;
-            historyChart.data.datasets[0].backgroundColor = createGradient(selected.gradientTop);
-            historyChart.options.scales.y.min = selected.min;
-            historyChart.options.scales.y.max = selected.max;
-            historyChart.options.scales.y.ticks.stepSize = selected.stepSize;
-            historyChart.update();
-
-            setTimeout(() => historyChartWrap.classList.remove('opacity-70'), 280);
-
-            renderTable(metricKey);
-            updateTabStyles(metricKey);
-        }
-
-        var _histPolling = false;
-        var _histTimer = null;
-        async function syncData() {
-            if (_histPolling || document.visibilityState === 'hidden') return;
-            _histPolling = true;
-            try {
-                if (typeof OneNetService !== 'undefined') {
-                    const data = await OneNetService.getLatestData();
-                    if (data) {
-                        const deviceStatusEl = document.getElementById('deviceStatus');
-                        deviceStatusEl.classList.remove('text-yellow-600', 'text-green-500', 'text-cyan-600', 'text-red-500');
-                        if (data._isMock) {
-                            deviceStatusEl.classList.remove('hidden');
-                            deviceStatusEl.innerHTML = '<span class="w-1.5 h-1.5 bg-cyan-500 rounded-full mr-1"></span> 预览模式，无在线历史';
-                            deviceStatusEl.classList.add('text-cyan-600');
-                        } else if (data._isOnline === false) {
-                            deviceStatusEl.classList.remove('hidden');
-                            deviceStatusEl.innerHTML = '<span class="w-1.5 h-1.5 bg-yellow-500 rounded-full mr-1 shadow-[0_0_4px_rgba(234,179,8,0.8)]"></span> 设备已离线';
-                            deviceStatusEl.classList.add('text-yellow-600');
-                        } else {
-                            deviceStatusEl.classList.remove('hidden');
-                            deviceStatusEl.innerHTML = '<span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1 shadow-[0_0_4px_rgba(34,197,94,0.8)]"></span> 设备在线';
-                            deviceStatusEl.classList.remove('text-yellow-600');
-                            deviceStatusEl.classList.add('text-green-500');
-                        }
-
-                        loadData();
-                        if (!currentMetric || !metricConfig[currentMetric]) return;
-                        
-                        const selected = metricConfig[currentMetric];
-                        
-                        historyChart.data.labels = labels;
-                        historyChart.data.datasets[0].data = selected.data;
-                        historyChart.data.datasets[0].pointRadius = labels.length > 50 ? 0 : 3.5;
-                        const yVals = selected.data.filter(v => v !== null);
-                        if (yVals.length) {
-                            const yMin = Math.min(...yVals), yMax = Math.max(...yVals);
-                            const yPad = (yMax - yMin || 1) * 0.25;
-                            historyChart.options.scales.y.min = Math.max(0, yMin - yPad);
-                            historyChart.options.scales.y.max = yMax + yPad;
-                            historyChart.options.scales.y.ticks.stepSize = Math.max(1, Math.ceil((yMax - yMin) / 5));
-                        }
-                        historyChart.update('none');
-                        
-                        renderTable(currentMetric);
-                    }
-                }
-            } catch (error) {
-                const deviceStatusEl = document.getElementById('deviceStatus');
-                if (deviceStatusEl) {
-                    deviceStatusEl.classList.remove('hidden', 'text-yellow-600', 'text-green-500', 'text-cyan-600');
-                    deviceStatusEl.classList.add('text-red-500');
-                    deviceStatusEl.textContent = '数据同步失败';
-                }
-            } finally {
-                _histPolling = false;
-            }
-        }
-
-        initChart();
-        function stopHistoryPolling() {
-            clearInterval(_histTimer);
-            _histTimer = null;
-        }
-        function startHistoryPolling() {
-            if (_histTimer || document.visibilityState === 'hidden') return;
-            syncData();
-            _histTimer = setInterval(syncData, 30000);
-        }
-        startHistoryPolling();
-        window.addEventListener('pagehide', stopHistoryPolling);
-
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                startHistoryPolling();
-                const newModelStr = localStorage.getItem('iot_data_model');
-                if (newModelStr && JSON.stringify(currentModel) !== newModelStr) {
-                    window.location.reload(); // Simple reload handles chart re-init easily
-                }
-            } else stopHistoryPolling();
-        });
-    </script>
+            <section class="history-panel">
+                <h2>历史明细</h2>
+                <div class="history-table-wrap">
+                    <table class="history-table">
+                        <thead id="historyTableHead"></thead>
+                        <tbody id="historyTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
     </div>
 
-    <script>
-        document.addEventListener("DOMContentLoaded", () => {
-            const path = window.location.pathname.split('/').pop() || 'index.html';
-            const links = document.querySelectorAll('.nav-item');
-            links.forEach(link => {
-                if (link.getAttribute('href') === path) {
-                    link.classList.remove('text-gray-500', 'hover:bg-blue-50');
-                    link.classList.add('bg-blue-50', 'text-blue-600', 'shadow-sm');
-                }
-            });
-        });
-    </script>
-<script src="js/mobile-nav.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/onenet.js"></script>
+    <script src="js/ui-common.js"></script>
+    <script src="js/history-core.js"></script>
+    <script src="js/history-page.js"></script>
+    <script src="js/mobile-nav.js"></script>
 </body>
 </html>
