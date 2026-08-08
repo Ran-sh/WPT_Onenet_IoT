@@ -286,7 +286,9 @@
         var rxPoints = result.rx || [];
         var rows = [];
         var statusText = '';
-        if (mode === 'compare') {
+        if (result.configurationMessage) {
+            statusText = result.configurationMessage;
+        } else if (mode === 'compare') {
             rows = WptHistoryCore.buildCompareRows(txPoints, rxPoints, PAIR_TOLERANCE_MS);
             if (result.failed) statusText = '查询失败';
             else if (result.partial) statusText = '部分成功';
@@ -307,7 +309,25 @@
         if (exportBtn) exportBtn.disabled = rows.length === 0;
     }
 
+    /* 云请求前判定端点是否已完整配置；不输出 Token。 */
+    function hasEndpointConfig(deviceKey) {
+        var config = getOneNetConfig(deviceKey);
+        return !!(config && config.PRODUCT_ID && config.DEVICE_NAME && config.TOKEN);
+    }
+
     async function performQuery(selection) {
+        var txConfigured = hasEndpointConfig('tx');
+        var rxConfigured = hasEndpointConfig('rx');
+        if (selection.mode === 'compare') {
+            if (!txConfigured && !rxConfigured) {
+                return { tx: null, rx: null, partial: false, failed: false, configurationMessage: '双端均未配置，请前往设置' };
+            }
+            if (!txConfigured || !rxConfigured) {
+                return { tx: null, rx: null, partial: false, failed: false, configurationMessage: '双端比较需先配置 TX 与 RX' };
+            }
+        } else if ((selection.mode === 'tx' && !txConfigured) || (selection.mode === 'rx' && !rxConfigured)) {
+            return { tx: null, rx: null, partial: false, failed: false, configurationMessage: '该端点未配置，请前往设置' };
+        }
         var window = queryWindow(selection.range);
         if (selection.mode === 'compare') {
             var settled = await Promise.allSettled([

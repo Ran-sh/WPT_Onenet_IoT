@@ -105,27 +105,48 @@
         renderList(incidents);
     }
 
+    /* 云请求前判定端点是否已完整配置；不输出 Token。 */
+    function hasEndpointConfig(deviceKey) {
+        var config = getOneNetConfig(deviceKey);
+        return !!(config && config.PRODUCT_ID && config.DEVICE_NAME && config.TOKEN);
+    }
+
     async function syncAll() {
+        var txConfigured = hasEndpointConfig('tx');
+        var rxConfigured = hasEndpointConfig('rx');
         var settled = await Promise.allSettled([
-            OneNetService.getLatestData('tx'),
-            OneNetService.getLatestData('rx')
+            txConfigured ? OneNetService.getLatestData('tx') : Promise.resolve(null),
+            rxConfigured ? OneNetService.getLatestData('rx') : Promise.resolve(null)
         ]);
+        var txFailed = txConfigured && settled[0].status === 'rejected';
+        var rxFailed = rxConfigured && settled[1].status === 'rejected';
         var snapshots = {
             tx: {
-                data: settled[0].status === 'fulfilled' ? settled[0].value : null,
-                error: settled[0].status === 'rejected' ? settled[0].reason : null
+                data: txConfigured && settled[0].status === 'fulfilled' ? settled[0].value : null,
+                error: txFailed ? settled[0].reason : null
             },
             rx: {
-                data: settled[1].status === 'fulfilled' ? settled[1].value : null,
-                error: settled[1].status === 'rejected' ? settled[1].reason : null
+                data: rxConfigured && settled[1].status === 'fulfilled' ? settled[1].value : null,
+                error: rxFailed ? settled[1].reason : null
             }
         };
-        var failed = settled[0].status === 'rejected' || settled[1].status === 'rejected';
         try {
             WptAlertEngine.evaluateSnapshots(snapshots, Date.now());
         } catch (e) {}
         renderAll();
-        setText('alertPollStatus', failed ? 'TX/RX 数据不可用，保持现有报警' : '双端同步完成');
+        var statusText;
+        if (!txConfigured && !rxConfigured) {
+            statusText = '未配置云端连接，仅显示本机报警记录';
+        } else if (txFailed || rxFailed) {
+            statusText = (txConfigured && rxConfigured)
+                ? 'TX/RX 数据不可用，保持现有报警'
+                : '已配置端点数据不可用，保持现有报警';
+        } else if (!txConfigured || !rxConfigured) {
+            statusText = '部分端点未配置，已同步可用端点';
+        } else {
+            statusText = '双端同步完成';
+        }
+        setText('alertPollStatus', statusText);
     }
 
     /* ---------- 清理对话框 ---------- */
