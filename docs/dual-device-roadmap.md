@@ -1,11 +1,11 @@
 # ONENETapp TX/RX 双设备演进路线
 
-状态：规划。当前线上 V5.1.3 页面仍以发射端单设备为主。
+状态：网关链路已实验台验证，自建双设备 UI 仍为规划。当前线上 V5.1.3 页面仍以发射端单设备为主。主仓库默认开发分支 `main` 的统一网关候选（`Arduino_Project/ESP32S3_Unified_Gateway/`）已在控制板断功率条件下完成 STM32 ←UART→ ESP32-S3 ←MQTT→ OneNET TX、ESP32-S3 ←BLE→ nRF52840、ESP32-S3 ←MQTT→ OneNET RX 真实上/下行闭环，未发送 START/ON；但 ONENETapp 的 RX 配置、看板、历史、告警、命令确认和 TX/RX 时间对齐曲线尚未实现。
 
 ## 目标设备
 
 - `TX_001`：现有 STM32F103 → ESP8266 → OneNET 发射端设备。
-- `RX_001`：规划中的 nRF52840 → ESP32-S3 N16R8 → OneNET 接收端设备。
+- `RX_001`：nRF52840 → ESP32-S3 N16R8 → OneNET 接收端设备；该网关链路已在实验台完成真实上/下行验证，ONENETapp 双设备页面仍为规划。
 
 两端使用独立 Product ID、Device Name、Token、请求状态、重试和命令确认链。凭据不写入仓库，不在日志或导出文件中显示。
 
@@ -30,7 +30,11 @@
 
 实现时必须提供单设备旧配置的显式迁移、字段验证、版本号和失败回滚；不得把一个设备的凭据复制给另一个设备。
 
-## 接收端属性规划
+## 接收端属性
+
+统一网关实际发布到 OneNET RX 的完整属性集合（字段与固件 `Mqtt_Task_Publish_Rx_Telemetry` 一致，上报路径已在实验台断功率条件下验证）：
+
+遥测/本地状态：
 
 - `RX_IMon`
 - `RX_Current_uA`
@@ -43,14 +47,28 @@
 - `RX_Stim`
 - `RX_Connected`
 - `RX_Valid`
-- `RX_State`
+- `RX_FaultReason`
+- `RX_FaultFlags`
+
+链路/派生健康：
+
 - `RX_BleOnline`
-- `RX_GatewayOnline`
 - `RX_MqttOnline`
-- `RX_LastTelemetryTime`
+- `RX_GatewayOnline`
+- `RX_WifiOnline`
+- `RX_TelemetryFresh`
+- `RX_State`
+- `RX_Safe`
+
+命令审计：
+
+- `RX_Command`
 - `RX_CommandResult`
 - `RX_CommandSequence`
-- `RX_FaultReason`
+
+`RX_LastTelemetryTime` 目前没有可信 UTC/SNTP 来源，暂不发布；OneNET 属性时间戳为当前权威时间，禁止用 `millis()` 冒充 UTC。
+
+以上字段由统一网关上报；仍为规划的是自建 ONENETapp 的 RX 属性展示、历史、告警和控制 UI，不是网关上报本身。
 
 字段类型、范围、单位和无效值策略必须与 `D:\A_Bone_healing\RXcode` 的活动协议和 ESP32 解析器共同确认后才能进入生产模型。
 
@@ -94,5 +112,5 @@ TX/RX 历史数据按时间戳对齐，不按数组下标连接。实现前固�
 1. 双设备配置、存储迁移和请求隔离通过主机契约测试。
 2. RX 状态、新鲜度、告警和危险控制门控通过离线测试。
 3. TX/RX 时间对齐覆盖容差、乱序、缺失、跨日和漂移。
-4. ESP32 与 OneNET 真实上下行、BLE 断线、命令确认和长时间运行完成实机验证。
+4. ESP32 与 OneNET 真实上下行、命令确认已在控制板断功率实验台验证；BLE 断线恢复和长时间运行仍需完成实机验证。
 5. 通过安全评审后再部署；规划文档和静态测试不能替代线上验收。

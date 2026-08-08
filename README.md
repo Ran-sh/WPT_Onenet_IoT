@@ -9,7 +9,7 @@
 
 WPT 无线充电系统 V5.1.3 的响应式网页端控制台，部署于 Cloudflare Workers 静态资源服务。通过 OneNET HTTP API 直连云平台物模型，提供实时监控、远程控制、历史数据、数据模型管理与统一登录守卫。支持 PWA 离线访问，可添加至手机主屏幕。
 
-当前生产页面仍以发射端 `TX_001` 单设备为主。ESP32-S3 接收端网关、`RX_001` 双设备配置、接收端看板和 TX/RX 时间对齐曲线只完成路线规划，尚未实现；详情见 `docs/dual-device-roadmap.md`。
+当前生产页面仍以发射端 `TX_001` 单设备为主。网关到 OneNET RX 的真实上/下行已在实验台（控制板断功率）验证，但自建 ONENETapp 的 `RX_001` 双设备配置、接收端看板和 TX/RX 时间对齐曲线仍未实现，仍属路线规划；详情见 `docs/dual-device-roadmap.md`。
 
 ## 访问地址
 
@@ -295,7 +295,7 @@ TX/RX 曲线只按时间戳和明确容差对齐，禁止按数组下标拼接�
 ## 关联项目
 
 - 主项目: [Ran-sh/WPT_TX](https://github.com/Ran-sh/WPT_TX)（分支 `5.0`）
-- 微信小程序: 主项目 `安卓app/` 目录
+- 微信小程序: 主项目 `WeChat_MiniProgram/` 目录
 - Railway 桥接 (历史): [Ran-sh/WPT_Railway](https://github.com/Ran-sh/WPT_Railway)
 
 ## 作者
