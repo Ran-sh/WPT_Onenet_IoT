@@ -66,6 +66,17 @@ const DEFAULT_DEVICE_MODELS = {
     }
 };
 
+/* 部署默认端点标识：仅用于新浏览器或未配置时的表单预填，不属于已配置凭据。 */
+const DEFAULT_ONENET_ENDPOINTS = Object.freeze({
+    tx: Object.freeze({ productId: '1iS397oJFL', deviceName: '20260001' }),
+    rx: Object.freeze({ productId: 'A60e06YLYw', deviceName: 'RX_001' })
+});
+
+function getDefaultOneNetEndpoint(deviceKey) {
+    if (deviceKey !== 'tx' && deviceKey !== 'rx') return { productId: '', deviceName: '' };
+    return { productId: DEFAULT_ONENET_ENDPOINTS[deviceKey].productId, deviceName: DEFAULT_ONENET_ENDPOINTS[deviceKey].deviceName };
+}
+
 /* 仅允许使用已知图标类，避免本地缓存被篡改后注入属性。 */
 const COMMON_ICONS = [
     'fa-thermometer-half', 'fa-droplet', 'fa-wind', 'fa-water', 'fa-fire', 

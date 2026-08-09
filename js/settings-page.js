@@ -29,6 +29,7 @@
     /* 读取当前已保存状态：Token 输入永远保持空，仅显示提示。 */
     function refreshEndpointState(deviceKey) {
         var config = typeof getOneNetConfig === 'function' ? getOneNetConfig(deviceKey) : null;
+        var defaults = typeof getDefaultOneNetEndpoint === 'function' ? getDefaultOneNetEndpoint(deviceKey) : { productId: '', deviceName: '' };
         var tokenInput = byId(deviceKey + 'Token');
         var tokenHint = byId(deviceKey + 'TokenHint');
         if (tokenInput) tokenInput.value = '';
@@ -37,8 +38,8 @@
         }
         var productInput = byId(deviceKey + 'ProductId');
         var deviceInput = byId(deviceKey + 'DeviceName');
-        if (productInput) productInput.value = config && config.PRODUCT_ID ? config.PRODUCT_ID : '';
-        if (deviceInput) deviceInput.value = config && config.DEVICE_NAME ? config.DEVICE_NAME : '';
+        if (productInput) productInput.value = config && config.PRODUCT_ID ? config.PRODUCT_ID : defaults.productId;
+        if (deviceInput) deviceInput.value = config && config.DEVICE_NAME ? config.DEVICE_NAME : defaults.deviceName;
     }
 
     async function saveConfig(deviceKey) {
