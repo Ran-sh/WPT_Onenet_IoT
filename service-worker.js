@@ -1,5 +1,5 @@
-/* WPT Monitor V6.0.0 Service Worker：同源资源网络优先，CDN资源缓存优先。 */
-var CACHE = 'wpt-v6-0-0-web-9';
+/* WPT Monitor V6.0.0 Service Worker：同源资源网络优先，CDN资源缓存优先（外部仅保留 CDNJS 与 jsDelivr）。 */
+var CACHE = 'wpt-v6-0-0-web-10';
 var BASE = self.location.pathname.replace(/\/[^/]*$/, '');
 var CORE_ASSETS = [
   BASE + '/', BASE + '/login.html', BASE + '/index.html', BASE + '/monitoring.html',
@@ -9,9 +9,9 @@ var CORE_ASSETS = [
   BASE + '/js/index-page.js', BASE + '/js/monitoring-page.js', BASE + '/js/settings-page.js',
   BASE + '/js/history-core.js', BASE + '/js/history-page.js', BASE + '/js/mobile-nav.js',
   BASE + '/js/alert-engine.js', BASE + '/js/alerts-page.js',
-  BASE + '/css/dashboard.css', BASE + '/manifest.json', BASE + '/icon.svg'
+  BASE + '/css/tailwind.css', BASE + '/css/dashboard.css', BASE + '/manifest.json', BASE + '/icon.svg'
 ];
-var CDN_HOSTS = ['cdn.tailwindcss.com', 'cdnjs.cloudflare.com', 'cdn.jsdelivr.net'];
+var CDN_HOSTS = ['cdnjs.cloudflare.com', 'cdn.jsdelivr.net'];
 
 function cacheResponse(request, response) {
   if (!response || !(response.ok || response.type === 'opaque')) return response;

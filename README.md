@@ -4,7 +4,7 @@
 [![Framework](https://img.shields.io/badge/Framework-Vanilla%20JS-yellow)]()
 [![PWA](https://img.shields.io/badge/PWA-Enabled-5A0FC8)]()
 [![Charts](https://img.shields.io/badge/Charts-Chart.js-FF6384)]()
-[![CSS](https://img.shields.io/badge/CSS-Tailwind-06B6D4)]()
+[![CSS](https://img.shields.io/badge/CSS-Tailwind_3.4.17-06B6D4)]()
 [![Version](https://img.shields.io/badge/Version-V6.0.0-brightgreen)]()
 
 WPT 无线充电系统 V6.0.0 的响应式双端网页控制台，部署于 Cloudflare Workers 静态资源服务。页面通过 OneNET HTTP API 分别连接发射端与接收端物模型，提供 TX/RX 首页切换、实时监测、安全门控控制、云端历史、时间对齐、事件化告警、双设备配置和统一登录守卫。支持 PWA，可添加至手机主屏幕。
@@ -140,7 +140,7 @@ V6.0.0 已在本地完成 `20260001`（TX）与 `RX_001`（RX）的独立配置�
 | 层级 | 技术 |
 |:---|:---|
 | HTML | 原生 HTML5, 语义标签 |
-| CSS | Tailwind CSS (CDN), 自定义全局变量 |
+| CSS | Tailwind CSS 3.4.17（本地预编译）, 自定义全局变量 |
 | JS | 原生 ES6 (无框架), async/await, fetch API |
 | 图表 | Chart.js 4.4.7（CDN，监测页与历史页） |
 | 图标 | Font Awesome Free (CDN) |
@@ -193,6 +193,16 @@ TX SETFREQ 108kHz:
 4. 在 Cloudflare Zero Trust 中为 `wptonenet.483763727.workers.dev` 配置 Access 策略，避免仅依赖前端门控。
 5. 部署完成后访问 `https://wptonenet.483763727.workers.dev/`，用无痕窗口验证登录、受保护页面、OneNET连接和V6.0.0版本元数据。
 
+### Tailwind CSS 构建
+
+生产页面通过 `css/tailwind.css` 加载本地预编译样式，运行时不依赖 Tailwind CDN。样式类变化后，在本目录运行：
+
+```bash
+npx --yes tailwindcss@3.4.17 -i ./css/tailwind-input.css -o ./css/tailwind.css --minify --content "./*.html" "./js/*.js"
+```
+
+`css/tailwind.css` 为生成产物并提交仓库；生产运行时不依赖 npm 或 CDN。
+
 ### 手动推送
 
 ```bash
@@ -221,7 +231,9 @@ ONENETapp/
 ├── settings.html       # TX/RX 独立凭据与本机数据维护
 ├── login.html          # 登录页
 ├── css/
-│   └── dashboard.css   # 全站工业仪表盘视觉系统
+│   ├── tailwind-input.css   # Tailwind 构建输入（@tailwind 三行指令）
+│   ├── tailwind.css         # 生产预编译样式（提交仓库）
+│   └── dashboard.css        # 全站工业仪表盘视觉系统（自定义覆盖）
 ├── js/
 │   ├── config.js       # 双端配置、固定安全模型与迁移
 │   ├── onenet.js       # 实时/历史读取、属性设置与严格解析
