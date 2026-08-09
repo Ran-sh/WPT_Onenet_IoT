@@ -25,6 +25,14 @@
         return '已恢复';
     }
 
+    /* RX 故障告警值部分显示故障中文解码；其他事件保持原 值/阈值/单位 文本。 */
+    function formatIncidentValue(incident) {
+        if (incident.ruleId === 'rx_fault_flags') {
+            return '故障 ' + WptUi.rxFaultText(incident.value);
+        }
+        return '值 ' + String(incident.value) + ' / 阈值 ' + String(incident.threshold) + (incident.unit ? ' ' + incident.unit : '');
+    }
+
     function renderList(incidents) {
         var list = byId('alertsList');
         var empty = byId('alertsEmpty');
@@ -53,7 +61,7 @@
             li.appendChild(header);
             var meta = document.createElement('p');
             meta.textContent = '开始 ' + WptUi.formatSourceTime(inc.startedAt) + ' · 最近 ' + WptUi.formatSourceTime(inc.lastSeenAt) +
-                ' · 值 ' + String(inc.value) + ' / 阈值 ' + String(inc.threshold) + (inc.unit ? ' ' + inc.unit : '');
+                ' · ' + formatIncidentValue(inc);
             li.appendChild(meta);
             if (inc.message) {
                 var message = document.createElement('p');

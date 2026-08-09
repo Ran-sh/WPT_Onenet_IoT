@@ -60,14 +60,30 @@ var WptUi = (function () {
         return RX_STATE_MAP[state] || '未知';
     }
 
+    /* RX 故障位按 bit0→bit8 顺序，与 BoneStimMonitor FaultFlag enum 一致。 */
+    var RX_FAULT_LABELS = [
+        '硬件限流', 'ADC采样无效', '输出电压过低', '输出电压过高', '骨电压越界',
+        '过流', 'BLE断开', '控制保活超时', '遥测异常'
+    ];
+
+    /* 解码 RX 故障位：仅 number+finite+integer+0..511 有效；非法值显示 未知。 */
+    function rxFaultText(value) {
+        if (typeof value !== 'number' || !Number.isFinite(value)) return '未知';
+        if (Math.floor(value) !== value) return '未知';
+        if (value < 0 || value > 511) return '未知';
+        var hex = '0x' + value.toString(16).toUpperCase().padStart(4, '0');
+        if (value === 0) return hex + ' · 无故障';
+        var reasons = [];
+        for (var bit = 0; bit < RX_FAULT_LABELS.length; bit++) {
+            if (value & (1 << bit)) reasons.push(RX_FAULT_LABELS[bit]);
+        }
+        return hex + ' · ' + reasons.join('、');
+    }
+
     /* RX 健康矩阵文本：状态类 bool 显示正常/断开/过期等明确文字，不限流/刺激显示开/关。 */
     function rxHealthText(metricId, value) {
         if (metricId === 'rx_state') return rxStateLabel(value);
-        if (metricId === 'rx_fault_flags') {
-            var n = Number(value);
-            if (!Number.isFinite(n)) return '未知';
-            return '0x' + n.toString(16).toUpperCase().padStart(4, '0');
-        }
+        if (metricId === 'rx_fault_flags') return rxFaultText(value);
         if (metricId === 'rx_fault_reason') {
             return typeof value === 'string' && value ? value : '未知';
         }
@@ -234,6 +250,7 @@ var WptUi = (function () {
         formatMetric: formatMetric,
         txStateLabel: txStateLabel,
         rxStateLabel: rxStateLabel,
+        rxFaultText: rxFaultText,
         rxHealthText: rxHealthText,
         isPropertyCurrent: isPropertyCurrent,
         buildTrendSeries: buildTrendSeries,
