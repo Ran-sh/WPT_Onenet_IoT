@@ -158,7 +158,7 @@ test('网页活动资源统一标记V6.0.0', () => {
   assert.match(read('js/mobile-nav.js'), /V6\.0\.0/);
   assert.match(read('css/dashboard.css'), /V6\.0\.0/);
   assert.match(read('service-worker.js'), /WPT Monitor V6\.0\.0/);
-  assert.match(read('service-worker.js'), /wpt-v6-0-0-web-11/);
+  assert.match(read('service-worker.js'), /wpt-v6-0-0-web-12/);
   assert.match(read('README.md'), /V6\.0\.0/);
 });
 
@@ -186,7 +186,7 @@ test('CSS统一入口为dashboard.css且Service Worker预缓存同步升级', ()
   const worker = read('service-worker.js');
   assert.match(worker, /BASE \+ '\/css\/dashboard\.css'/);
   assert.doesNotMatch(worker, /dashboard-v5/);
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-11'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
 });
 
 test('R65 生产页面使用本地预编译 Tailwind', () => {
@@ -203,7 +203,7 @@ test('R65 生产页面使用本地预编译 Tailwind', () => {
 
 test('R66 Service Worker 缓存本地 Tailwind', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-11'/, 'SW 缓存版本必须升级为 web-11');
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/, 'SW 缓存版本必须升级为 web-12');
   assert.match(worker, /BASE \+ '\/css\/tailwind\.css'/, 'SW 必须预缓存本地 css/tailwind.css');
   assert.doesNotMatch(worker, /cdn\.tailwindcss\.com/, 'SW CDN_HOSTS 不得再包含 cdn.tailwindcss.com');
   assert.match(worker, /cdnjs\.cloudflare\.com/, 'SW CDN_HOSTS 必须保留 cdnjs.cloudflare.com');
@@ -1596,10 +1596,23 @@ test('P1 WptUi 端点分类与格式化工具', () => {
   assert.equal(api.WptUi.rxHealthText('rx_connected', false), '未连接');
   assert.equal(api.WptUi.rxHealthText('rx_limit', true), '开启');
   assert.equal(api.WptUi.rxHealthText('rx_stim', false), '关闭');
-  assert.equal(api.WptUi.rxHealthText('rx_fault_flags', 4), '0x0004');
+  assert.equal(api.WptUi.rxHealthText('rx_fault_flags', 4), '0x0004 · 输出电压过低');
   assert.equal(api.WptUi.rxHealthText('rx_fault_reason', '0x0004'), '0x0004');
   assert.equal(api.WptUi.rxHealthText('rx_ble_online', undefined), '未知');
   assert.equal(api.WptUi.rxHealthText('rx_fault_reason', undefined), '未知');
+});
+
+test('WptUi.rxFaultText 解码 RX 故障位（R1）', () => {
+  const { api } = loadUiCommon();
+  assert.equal(api.WptUi.rxFaultText(0), '0x0000 · 无故障');
+  assert.equal(api.WptUi.rxFaultText(4), '0x0004 · 输出电压过低');
+  assert.equal(api.WptUi.rxFaultText(21), '0x0015 · 硬件限流、输出电压过低、骨电压越界');
+  assert.equal(api.WptUi.rxFaultText(511), '0x01FF · 硬件限流、ADC采样无效、输出电压过低、输出电压过高、骨电压越界、过流、BLE断开、控制保活超时、遥测异常');
+  assert.equal(api.WptUi.rxFaultText(NaN), '未知');
+  assert.equal(api.WptUi.rxFaultText('21'), '未知');
+  assert.equal(api.WptUi.rxFaultText(-1), '未知');
+  assert.equal(api.WptUi.rxFaultText(512), '未知');
+  assert.equal(api.WptUi.rxFaultText(1.5), '未知');
 });
 
 test('P1 WptUi.isPropertyCurrent 按属性源时间判定', () => {
@@ -1784,7 +1797,7 @@ test('P6 工业视觉约束：无渐变、纯色基线、响应式与可访问',
 
 test('P7 PWA 缓存版本升级并预缓存新资源', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-11'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
   for (const asset of ['js/ui-common.js', 'js/index-page.js', 'js/monitoring-page.js']) {
     assert.match(worker, new RegExp(asset.replace(/[.]/g, '\\.')), asset);
   }
@@ -2490,7 +2503,7 @@ test('R4/R7 设置页结构契约：双端表单、模型摘要、无任意编�
 
 test('R8 SW web-3 预缓存设置页资源，设置样式无渐变', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-11'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
   assert.match(worker, /js\/settings-page\.js/);
   const css = read('css/dashboard.css');
   assert.doesNotMatch(css, /gradient\(/);
@@ -3176,7 +3189,7 @@ test('R27 控制页样式无渐变且响应式', () => {
 
 test('R28 SW web-4 预缓存控制模块', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-11'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
   assert.match(worker, /js\/control-core\.js/);
   assert.match(worker, /js\/control-page\.js/);
 });
@@ -3421,7 +3434,7 @@ test('R38 control-form 手机布局不换行且可收缩', () => {
 
 test('R39 SW web-5 资源清单同步', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-11'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
   for (const asset of ['js/ui-common.js', 'js/index-page.js', 'js/monitoring-page.js', 'js/settings-page.js', 'js/control-core.js', 'js/control-page.js']) {
     assert.match(worker, new RegExp(asset.replace(/[.]/g, '\\.')), asset);
   }
@@ -3761,9 +3774,9 @@ test('R43 图表源时间/双轴/负数/无 Chart 降级', async () => {
   assert.ok(harness2.els.historyTableBody.children.length >= 1);
 });
 
-test('R45 SW 同源全 network-first 与历史资源（web-11）', () => {
+test('R45 SW 同源全 network-first 与历史资源（web-12）', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-11'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
   assert.match(worker, /js\/history-core\.js/);
   assert.match(worker, /js\/history-page\.js/);
   assert.match(worker, /url\.origin === self\.location\.origin/);
@@ -4016,9 +4029,9 @@ test('R52e history-page 无重复死代码', () => {
   assert.doesNotMatch(page, /var currentMode/);
 });
 
-test('R52f/R64 SW 缓存版本 web-11', () => {
+test('R52f/R64 SW 缓存版本 web-12', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-11'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
 });
 
 /* ========== R54-R57 告警引擎与告警中心 ========== */
@@ -4504,6 +4517,35 @@ test('R55b 告警中心双端同步、筛选、确认与清理对话框', async 
   assert.equal(harness.els.clearResolvedBtn.disabled, true);
 });
 
+test('R2 RX 故障位告警卡显示中文解码文本', async () => {
+  const now = Date.now();
+  const txItems = fullTxItems(now).map((item) => item.identifier === 'S' ? { ...item, value: 3 } : item);
+  const rxItems = rxGateOpenItems(now).map((item) => item.identifier === 'RX_FaultFlags' ? { ...item, value: 21 } : item);
+  const fetchImpl = async (url) => {
+    if (url.includes('/device/detail')) return { ok: true, status: 200, json: async () => ({ code: 0, data: { status: 1 } }) };
+    if (url.includes('device_name=rxd')) return { ok: true, status: 200, json: async () => ({ code: 0, data: { list: rxItems } }) };
+    return { ok: true, status: 200, json: async () => ({ code: 0, data: txItems }) };
+  };
+  const harness = buildAlertsDom();
+  loadAlertsPage(harness, { iot_onenet_devices_v1: DUAL_CONFIG }, fetchImpl);
+  await flushAsync();
+  const deepTexts = (el) => {
+    const out = [];
+    const walk = (node) => { node.children.forEach((c) => { out.push(c.textContent); walk(c); }); };
+    walk(el);
+    return out;
+  };
+  const cards = Array.from(harness.els.alertsList.children);
+  const rxCard = cards.find((c) => deepTexts(c).some((t) => t.includes('接收端 · 接收端故障')));
+  const txCard = cards.find((c) => deepTexts(c).some((t) => t.includes('发射端 · 发射端故障')));
+  assert.ok(rxCard, 'RX 故障告警卡必须存在');
+  assert.ok(txCard, 'TX 故障告警卡必须存在');
+  const rxTexts = deepTexts(rxCard);
+  assert.ok(rxTexts.some((t) => t.includes('故障 0x0015 · 硬件限流、输出电压过低、骨电压越界')), 'RX 卡必须显示故障中文解码');
+  assert.ok(!rxTexts.some((t) => t.includes('值 21 / 阈值 0')), 'RX 卡不得显示无诊断意义的十进制 值/阈值');
+  assert.ok(deepTexts(txCard).some((t) => t.includes('值 3 / 阈值 3')), 'TX 告警卡保持原 值/阈值 文本');
+});
+
 test('R56 首页告警摘要：每轮一次评估、隐藏端参与、异常隔离', async () => {
   let txSourceNow = Date.now();
   let txFault = true;
@@ -4570,7 +4612,7 @@ test('R56 监测页告警摘要与异常隔离', async () => {
   assert.equal(harness2.rxSummary.status.textContent, '实时');
 });
 
-test('R57 告警样式与 SW web-11 资源', () => {
+test('R57 告警样式与 SW web-12 资源', () => {
   const html = read('index.html');
   assert.match(html, /id=["']homeAlertSummary["'][^>]*href=["']\/alerts["']/);
   assert.match(html, /js\/alert-engine\.js/);
@@ -4587,7 +4629,7 @@ test('R57 告警样式与 SW web-11 资源', () => {
   assert.match(css, /@media\s*\(max-width:\s*520px\)/);
   assert.match(css, /:focus-visible/);
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-11'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
   assert.match(worker, /js\/alert-engine\.js/);
   assert.match(worker, /js\/alerts-page\.js/);
 });
