@@ -41,7 +41,7 @@ const DEFAULT_DEVICE_MODELS = {
             { id: 'rx_bonep', name: '正向电压', icon: 'fa-bolt', color: 'teal', unit: 'V', cloudKey: 'RX_BoneP', dataType: 'double', min: 0, max: 3.3, step: 0.001 },
             { id: 'rx_bonen', name: '负向电压', icon: 'fa-bolt', color: 'purple', unit: 'V', cloudKey: 'RX_BoneN', dataType: 'double', min: 0, max: 3.3, step: 0.001 },
             { id: 'rx_bonev', name: '骨电压', icon: 'fa-bolt', color: 'blue', unit: 'V', cloudKey: 'RX_BoneV', dataType: 'double', min: -3.3, max: 3.3, step: 0.001 },
-            { id: 'rx_resistance', name: '阻抗', icon: 'fa-microchip', color: 'slate', unit: 'ohm', cloudKey: 'RX_Resistance', dataType: 'int32', min: -10000000, max: 10000000, step: 1 },
+            { id: 'rx_resistance', name: '阻抗', icon: 'fa-microchip', color: 'slate', unit: 'ohm', cloudKey: 'RX_Resistance', dataType: 'int32', min: -10000000, max: 10000000, step: 1, unavailableValue: -1, unavailableLabel: '电流不足' },
             { id: 'rx_vout', name: '输出电压', icon: 'fa-bolt', color: 'orange', unit: 'V', cloudKey: 'RX_Vout', dataType: 'double', min: 0, max: 36.3, step: 0.01 },
             { id: 'rx_limit', name: '限流', icon: 'fa-lock', color: 'red', unit: '', cloudKey: 'RX_Limit', dataType: 'bool', step: 1 },
             { id: 'rx_stim', name: '刺激中', icon: 'fa-bolt', color: 'yellow', unit: '', cloudKey: 'RX_Stim', dataType: 'bool', step: 1 },
@@ -240,6 +240,25 @@ function getDataModel(deviceKey) {
         };
     }
     return normalizeDataModel(readLocalJSON('iot_data_model', null));
+}
+
+/* 哨兵不可用值唯一语义：只认 sensor 元数据中精确数值匹配的有限 number。 */
+function getUnavailableMetricLabel(deviceKey, metricId, value) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+    var model = typeof getDataModel === 'function' ? getDataModel(deviceKey) : null;
+    if (!model || !Array.isArray(model.sensors)) return null;
+    for (var i = 0; i < model.sensors.length; i++) {
+        if (model.sensors[i].id !== metricId) continue;
+        var sensor = model.sensors[i];
+        if (typeof sensor.unavailableValue === 'number' &&
+            Number.isFinite(sensor.unavailableValue) &&
+            value === sensor.unavailableValue &&
+            typeof sensor.unavailableLabel === 'string' && sensor.unavailableLabel) {
+            return sensor.unavailableLabel;
+        }
+        return null;
+    }
+    return null;
 }
 
 function saveDataModel(model) {

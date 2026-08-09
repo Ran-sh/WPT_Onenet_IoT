@@ -49,6 +49,14 @@ var WptUi = (function () {
         return number.toFixed(digits) + (typeof unit === 'string' ? unit : '');
     }
 
+    /* 哨兵不可用值显示为元数据标签；其余值原样委托 formatMetric。 */
+    function formatDeviceMetric(deviceKey, metricId, value, decimals, unit) {
+        var label = typeof getUnavailableMetricLabel === 'function'
+            ? getUnavailableMetricLabel(deviceKey, metricId, value) : null;
+        if (label !== null) return label;
+        return formatMetric(value, decimals, unit);
+    }
+
     var TX_STATE_MAP = { 0: '待机', 1: '扫频', 2: '运行', 3: '故障' };
     var RX_STATE_MAP = { 0: '启动', 1: '空闲', 2: '就绪', 3: '刺激', 4: '故障', 5: 'BLE断开' };
 
@@ -130,6 +138,8 @@ var WptUi = (function () {
             if (timestamp < now - window || timestamp > now) return;
             var value = Number(item.data && item.data[metricId]);
             if (!Number.isFinite(value)) return;
+            if (typeof getUnavailableMetricLabel === 'function' &&
+                getUnavailableMetricLabel(deviceKey, metricId, value) !== null) return;
             byTime[timestamp] = { x: timestamp, y: value };
         });
         var points = [];
@@ -248,6 +258,7 @@ var WptUi = (function () {
         formatSourceTime: formatSourceTime,
         formatAge: formatAge,
         formatMetric: formatMetric,
+        formatDeviceMetric: formatDeviceMetric,
         txStateLabel: txStateLabel,
         rxStateLabel: rxStateLabel,
         rxFaultText: rxFaultText,

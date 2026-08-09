@@ -885,6 +885,8 @@ class OneNetService {
                 value = normalized;
             }
             if (!Number.isFinite(Number(value))) return;
+            if (typeof getUnavailableMetricLabel === 'function' &&
+                getUnavailableMetricLabel(key, metricId, value) !== null) return;
             /* 同一源时间戳后出现的合法点覆盖，最后升序。 */
             byTime[time] = {
                 deviceKey: key,

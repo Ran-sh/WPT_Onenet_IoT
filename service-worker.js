@@ -1,5 +1,5 @@
 /* WPT Monitor V6.0.0 Service Worker：同源资源网络优先，CDN资源缓存优先（外部仅保留 CDNJS 与 jsDelivr）。 */
-var CACHE = 'wpt-v6-0-0-web-12';
+var CACHE = 'wpt-v6-0-0-web-13';
 var BASE = self.location.pathname.replace(/\/[^/]*$/, '');
 var CORE_ASSETS = [
   BASE + '/', BASE + '/login.html', BASE + '/index.html', BASE + '/monitoring.html',

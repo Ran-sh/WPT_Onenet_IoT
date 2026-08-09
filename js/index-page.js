@@ -43,7 +43,7 @@
             el.textContent = WptUi.txStateLabel(data[metricId]);
             return;
         }
-        el.textContent = WptUi.formatMetric(data[metricId], el.getAttribute('data-decimals'), el.getAttribute('data-unit'));
+        el.textContent = WptUi.formatDeviceMetric(key, metricId, data[metricId], el.getAttribute('data-decimals'), el.getAttribute('data-unit'));
     }
 
     function renderEndpoint(key, data, error) {

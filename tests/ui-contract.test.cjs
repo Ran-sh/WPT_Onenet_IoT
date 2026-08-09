@@ -74,6 +74,7 @@ function loadWebModules(initialStorage = {}, fetchImpl, options = {}) {
   vm.createContext(context);
   vm.runInContext(read('js/config.js') + '\n' + read('js/onenet.js') +
     '\n;globalThis.__web = { OneNetService, validateControlParams, normalizeCloudValue, getDataModel,' +
+    ' getUnavailableMetricLabel: typeof getUnavailableMetricLabel === "function" ? getUnavailableMetricLabel : undefined,' +
     ' DATA_MODEL_VERSION: typeof DATA_MODEL_VERSION !== "undefined" ? DATA_MODEL_VERSION : undefined,' +
     ' DEFAULT_DEVICE_MODELS: typeof DEFAULT_DEVICE_MODELS !== "undefined" ? DEFAULT_DEVICE_MODELS : undefined,' +
     ' getOneNetConfig: typeof getOneNetConfig === "function" ? getOneNetConfig : undefined,' +
@@ -158,7 +159,7 @@ test('网页活动资源统一标记V6.0.0', () => {
   assert.match(read('js/mobile-nav.js'), /V6\.0\.0/);
   assert.match(read('css/dashboard.css'), /V6\.0\.0/);
   assert.match(read('service-worker.js'), /WPT Monitor V6\.0\.0/);
-  assert.match(read('service-worker.js'), /wpt-v6-0-0-web-12/);
+  assert.match(read('service-worker.js'), /wpt-v6-0-0-web-13/);
   assert.match(read('README.md'), /V6\.0\.0/);
 });
 
@@ -186,7 +187,7 @@ test('CSS统一入口为dashboard.css且Service Worker预缓存同步升级', ()
   const worker = read('service-worker.js');
   assert.match(worker, /BASE \+ '\/css\/dashboard\.css'/);
   assert.doesNotMatch(worker, /dashboard-v5/);
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
 });
 
 test('R65 生产页面使用本地预编译 Tailwind', () => {
@@ -203,7 +204,7 @@ test('R65 生产页面使用本地预编译 Tailwind', () => {
 
 test('R66 Service Worker 缓存本地 Tailwind', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/, 'SW 缓存版本必须升级为 web-12');
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/, 'SW 缓存版本必须升级为 web-13');
   assert.match(worker, /BASE \+ '\/css\/tailwind\.css'/, 'SW 必须预缓存本地 css/tailwind.css');
   assert.doesNotMatch(worker, /cdn\.tailwindcss\.com/, 'SW CDN_HOSTS 不得再包含 cdn.tailwindcss.com');
   assert.match(worker, /cdnjs\.cloudflare\.com/, 'SW CDN_HOSTS 必须保留 cdnjs.cloudflare.com');
@@ -1266,7 +1267,7 @@ function loadUiCommon(options = {}) {
     Promise, Set, Object, Array, JSON, Math, Number, String, Date
   };
   vm.createContext(context);
-  vm.runInContext(read('js/ui-common.js') + '\n;globalThis.__web = { WptUi };', context);
+  vm.runInContext(read('js/config.js') + '\n' + read('js/ui-common.js') + '\n;globalThis.__web = { WptUi };', context);
   return { api: context.__web, context };
 }
 
@@ -1797,7 +1798,7 @@ test('P6 工业视觉约束：无渐变、纯色基线、响应式与可访问',
 
 test('P7 PWA 缓存版本升级并预缓存新资源', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
   for (const asset of ['js/ui-common.js', 'js/index-page.js', 'js/monitoring-page.js']) {
     assert.match(worker, new RegExp(asset.replace(/[.]/g, '\\.')), asset);
   }
@@ -2503,7 +2504,7 @@ test('R4/R7 设置页结构契约：双端表单、模型摘要、无任意编�
 
 test('R8 SW web-3 预缓存设置页资源，设置样式无渐变', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
   assert.match(worker, /js\/settings-page\.js/);
   const css = read('css/dashboard.css');
   assert.doesNotMatch(css, /gradient\(/);
@@ -3189,7 +3190,7 @@ test('R27 控制页样式无渐变且响应式', () => {
 
 test('R28 SW web-4 预缓存控制模块', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
   assert.match(worker, /js\/control-core\.js/);
   assert.match(worker, /js\/control-page\.js/);
 });
@@ -3434,7 +3435,7 @@ test('R38 control-form 手机布局不换行且可收缩', () => {
 
 test('R39 SW web-5 资源清单同步', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
   for (const asset of ['js/ui-common.js', 'js/index-page.js', 'js/monitoring-page.js', 'js/settings-page.js', 'js/control-core.js', 'js/control-page.js']) {
     assert.match(worker, new RegExp(asset.replace(/[.]/g, '\\.')), asset);
   }
@@ -3774,9 +3775,9 @@ test('R43 图表源时间/双轴/负数/无 Chart 降级', async () => {
   assert.ok(harness2.els.historyTableBody.children.length >= 1);
 });
 
-test('R45 SW 同源全 network-first 与历史资源（web-12）', () => {
+test('R45 SW 同源全 network-first 与历史资源（web-13）', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
   assert.match(worker, /js\/history-core\.js/);
   assert.match(worker, /js\/history-page\.js/);
   assert.match(worker, /url\.origin === self\.location\.origin/);
@@ -4029,9 +4030,9 @@ test('R52e history-page 无重复死代码', () => {
   assert.doesNotMatch(page, /var currentMode/);
 });
 
-test('R52f/R64 SW 缓存版本 web-12', () => {
+test('R52f/R64 SW 缓存版本 web-13', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
 });
 
 /* ========== R54-R57 告警引擎与告警中心 ========== */
@@ -4612,7 +4613,7 @@ test('R56 监测页告警摘要与异常隔离', async () => {
   assert.equal(harness2.rxSummary.status.textContent, '实时');
 });
 
-test('R57 告警样式与 SW web-12 资源', () => {
+test('R57 告警样式与 SW web-13 资源', () => {
   const html = read('index.html');
   assert.match(html, /id=["']homeAlertSummary["'][^>]*href=["']\/alerts["']/);
   assert.match(html, /js\/alert-engine\.js/);
@@ -4629,7 +4630,7 @@ test('R57 告警样式与 SW web-12 资源', () => {
   assert.match(css, /@media\s*\(max-width:\s*520px\)/);
   assert.match(css, /:focus-visible/);
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-12'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
   assert.match(worker, /js\/alert-engine\.js/);
   assert.match(worker, /js\/alerts-page\.js/);
 });
@@ -4703,4 +4704,153 @@ test('R63 告警页无配置/仅部分配置时只请求已配置端点并给出
   assert.ok(callsC.length > 0);
   assert.ok(callsC.every((u) => !u.includes('device_name=rxd')));
   assert.equal(h3.els.alertPollStatus.textContent, '已配置端点数据不可用，保持现有报警');
+});
+
+/* ========== R69：RX_Resistance=-1 哨兵误显示为 -1Ω 的行为回归 ========== */
+
+test('R69 RX_Resistance=-1 哨兵元数据与唯一纯函数契约', () => {
+  const { api } = loadWebModules({}, async () => { throw new Error('no fetch'); });
+  const rx = api.getDataModel('rx');
+  const sensor = rx.sensors.find((s) => s.id === 'rx_resistance');
+  assert.ok(sensor, '缺少 rx_resistance 传感器');
+  assert.equal(sensor.unavailableValue, -1);
+  assert.equal(sensor.unavailableLabel, '电流不足');
+
+  assert.equal(typeof api.getUnavailableMetricLabel, 'function');
+  assert.equal(api.getUnavailableMetricLabel('rx', 'rx_resistance', -1), '电流不足');
+  assert.equal(api.getUnavailableMetricLabel('rx', 'rx_resistance', -2), null);
+  assert.equal(api.getUnavailableMetricLabel('rx', 'rx_resistance', 5000), null);
+  assert.equal(api.getUnavailableMetricLabel('rx', 'rx_imon', -1), null);
+  assert.equal(api.getUnavailableMetricLabel('tx', 'voltage', -1), null);
+
+  const { api: ui } = loadUiCommon();
+  assert.equal(typeof ui.WptUi.formatDeviceMetric, 'function');
+  assert.equal(ui.WptUi.formatDeviceMetric('rx', 'rx_resistance', -1, 0, 'Ω'), '电流不足');
+  assert.equal(ui.WptUi.formatDeviceMetric('rx', 'rx_resistance', 5000, 0, 'Ω'), '5000Ω');
+  assert.equal(ui.WptUi.formatDeviceMetric('rx', 'rx_resistance', undefined, 0, 'Ω'), '--');
+  assert.equal(ui.WptUi.formatDeviceMetric('rx', 'rx_imon', -1, 3, 'V'), '-1.000V');
+});
+
+test('R69 首页与监测页 live RX 阻抗哨兵显示且 gate 保持', async () => {
+  const now = Date.now();
+  const negItems = fullRxItems(now).map((item) =>
+    item.identifier === 'RX_Resistance' ? Object.assign({}, item, { value: -1 }) : item
+  );
+  const offlineFetch = async (url) => {
+    if (url.includes('/device/detail')) return { ok: true, status: 200, json: async () => ({ code: 0, data: { status: 0 } }) };
+    if (url.includes('device_name=rxd')) return { ok: true, status: 200, json: async () => ({ code: 0, data: { list: negItems } }) };
+    return { ok: true, status: 200, json: async () => ({ code: 0, data: txLiveItems(now) }) };
+  };
+  const errorFetch = async () => { throw new Error('rx down'); };
+  async function loadState(script, harness, fetchImpl) {
+    loadPage(script, harness, { iot_onenet_devices_v1: DUAL_CONFIG }, fetchImpl);
+    await flushAsync();
+    return harness;
+  }
+
+  /* live：首页与监测页均显示电流不足，不附加 Ω */
+  const home = await loadState('js/index-page.js', buildIndexDom(), dualFetch(negItems));
+  assert.equal(home.rx.status.dataset.state, 'live');
+  assert.equal(home.rx.bindEls[2].textContent, '电流不足');
+  const monitor = await loadState('js/monitoring-page.js', buildMonitoringDom(undefined), dualFetch(negItems));
+  assert.equal(monitor.rxSummary.status.dataset.state, 'live');
+  assert.equal(monitor.rxMeasureBinds[5].textContent, '电流不足');
+
+  /* 普通 5000 仍按原格式显示 */
+  const homeOk = await loadState('js/index-page.js', buildIndexDom(), dualFetch(fullRxItems(now)));
+  assert.equal(homeOk.rx.bindEls[2].textContent, '5000Ω');
+  const monitorOk = await loadState('js/monitoring-page.js', buildMonitoringDom(undefined), dualFetch(fullRxItems(now)));
+  assert.equal(monitorOk.rxMeasureBinds[5].textContent, '5000Ω');
+
+  /* stale：测量绑定仍 -- */
+  const homeStale = await loadState('js/index-page.js', buildIndexDom(), dualFetch(rxStaleItems(now, now - 1000)));
+  assert.equal(homeStale.rx.bindEls[2].textContent, '--');
+  const monitorStale = await loadState('js/monitoring-page.js', buildMonitoringDom(undefined), dualFetch(rxStaleItems(now, now - 1000)));
+  assert.equal(monitorStale.rxMeasureBinds[5].textContent, '--');
+
+  /* offline：_isOnline=false，即使数据残留 -1 也 -- */
+  const homeOff = await loadState('js/index-page.js', buildIndexDom(), offlineFetch);
+  assert.equal(homeOff.rx.status.dataset.state, 'offline');
+  assert.equal(homeOff.rx.bindEls[2].textContent, '--');
+  const monitorOff = await loadState('js/monitoring-page.js', buildMonitoringDom(undefined), offlineFetch);
+  assert.equal(monitorOff.rxMeasureBinds[5].textContent, '--');
+
+  /* error：请求失败仍 -- */
+  const homeErr = await loadState('js/index-page.js', buildIndexDom(), errorFetch);
+  assert.equal(homeErr.rx.status.dataset.state, 'error');
+  assert.equal(homeErr.rx.bindEls[2].textContent, '--');
+  const monitorErr = await loadState('js/monitoring-page.js', buildMonitoringDom(undefined), errorFetch);
+  assert.equal(monitorErr.rxMeasureBinds[5].textContent, '--');
+});
+
+test('R69 buildTrendSeries 过滤 RX_Resistance=-1 并保留其他负值', () => {
+  const { api } = loadUiCommon();
+  const now = 1750000000000;
+  const history = [
+    { deviceKey: 'rx', timestamp: now - 1000, timeSource: 'onenet', data: { rx_resistance: -1 } },
+    { deviceKey: 'rx', timestamp: now - 2000, timeSource: 'onenet', data: { rx_resistance: 5000 } },
+    { deviceKey: 'rx', timestamp: now - 3000, timeSource: 'onenet', data: { rx_resistance: -2 } },
+    { deviceKey: 'rx', timestamp: now - 4000, timeSource: 'onenet', data: { rx_imon: -1 } },
+    { deviceKey: 'tx', timestamp: now - 1500, timeSource: 'onenet', data: { rx_resistance: -1 } }
+  ];
+  const original = JSON.stringify(history);
+  const points = api.WptUi.buildTrendSeries('rx', 'rx_resistance', history, now, 1800000);
+  assert.equal(JSON.stringify(points), JSON.stringify([
+    { x: now - 3000, y: -2 },
+    { x: now - 2000, y: 5000 }
+  ]));
+  const imon = api.WptUi.buildTrendSeries('rx', 'rx_imon', history, now, 1800000);
+  assert.equal(JSON.stringify(imon), JSON.stringify([{ x: now - 4000, y: -1 }]));
+  assert.equal(JSON.stringify(history), original);
+});
+
+test('R69 云历史过滤 RX_Resistance=-1 且原始最新/本地历史保留', async () => {
+  const now = Date.now();
+  const historyCalls = [];
+  const { api } = loadWebModules(
+    { iot_onenet_devices_v1: DUAL_CONFIG },
+    async (url) => {
+      historyCalls.push(url);
+      if (url.includes('identifier=RX_Resistance')) {
+        return { ok: true, status: 200, json: async () => ({ code: 0, data: { list: [
+          { value: -1, time: now - 4000 },
+          { value: 5000, time: now - 3000 },
+          { value: 2500, time: now - 2000 },
+          { value: -2, time: now - 1000 },
+          { value: -1, time: now - 500 }
+        ] } }) };
+      }
+      if (url.includes('identifier=RX_IMon')) {
+        return { ok: true, status: 200, json: async () => ({ code: 0, data: { list: [
+          { value: -1.234, time: now - 3000 },
+          { value: 0.5, time: now - 2000 }
+        ] } }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ code: 0, data: { list: [] } }) };
+    }
+  );
+  const resistancePoints = await api.OneNetService.getPropertyHistory('rx', 'rx_resistance', now - 3600000, now, 100);
+  assert.equal(resistancePoints.some((p) => p.value === -1), false);
+  assert.equal(
+    JSON.stringify(resistancePoints.map((p) => p.value).sort((a, b) => a - b)),
+    JSON.stringify([-2, 2500, 5000])
+  );
+  const imonPoints = await api.OneNetService.getPropertyHistory('rx', 'rx_imon', now - 3600000, now, 100);
+  assert.ok(imonPoints.some((p) => p.value === -1.234));
+  assert.equal(historyCalls.length, 2);
+
+  /* getLatestData 与本地最新缓存/整帧历史仍保留原始 -1 供协议审计 */
+  const { api: api2, storage: storage2 } = loadWebModules(
+    { iot_onenet_devices_v1: DUAL_CONFIG },
+    makePropertyFetch(fullRxItems(now).map((item) =>
+      item.identifier === 'RX_Resistance' ? Object.assign({}, item, { value: -1 }) : item
+    ))
+  );
+  const latest = await api2.OneNetService.getLatestData('rx');
+  assert.equal(latest.rx_resistance, -1);
+  const cached = JSON.parse(storage2.get('iot_latest_data_rx'));
+  assert.equal(cached.rx_resistance, -1);
+  const history = JSON.parse(storage2.get('iot_history_data_rx'));
+  assert.ok(Array.isArray(history) && history.length >= 1);
+  assert.ok(history.some((item) => item.data && item.data.rx_resistance === -1));
 });
