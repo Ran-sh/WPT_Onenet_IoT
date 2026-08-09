@@ -189,6 +189,42 @@ test('CSS统一入口为dashboard.css且Service Worker预缓存同步升级', ()
   assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-9'/);
 });
 
+test('R65 生产页面使用本地预编译 Tailwind', () => {
+  for (const page of pages) {
+    const html = read(`${page}.html`);
+    assert.doesNotMatch(html, /cdn\.tailwindcss\.com/, `${page}.html 仍在生产环境运行 Tailwind CDN`);
+    const tailwindIndex = html.indexOf('href="css/tailwind.css"');
+    const dashboardIndex = html.indexOf('href="css/dashboard.css"');
+    assert.ok(tailwindIndex >= 0, `${page}.html 缺少本地 css/tailwind.css`);
+    assert.ok(dashboardIndex >= 0, `${page}.html 缺少 css/dashboard.css`);
+    assert.ok(tailwindIndex < dashboardIndex, `${page}.html 本地 tailwind.css 必须位于 dashboard.css 之前`);
+  }
+});
+
+test('R66 Service Worker 缓存本地 Tailwind', () => {
+  const worker = read('service-worker.js');
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-10'/, 'SW 缓存版本必须升级为 web-10');
+  assert.match(worker, /BASE \+ '\/css\/tailwind\.css'/, 'SW 必须预缓存本地 css/tailwind.css');
+  assert.doesNotMatch(worker, /cdn\.tailwindcss\.com/, 'SW CDN_HOSTS 不得再包含 cdn.tailwindcss.com');
+  assert.match(worker, /cdnjs\.cloudflare\.com/, 'SW CDN_HOSTS 必须保留 cdnjs.cloudflare.com');
+  assert.match(worker, /cdn\.jsdelivr\.net/, 'SW CDN_HOSTS 必须保留 cdn.jsdelivr.net');
+});
+
+test('R67 Tailwind CSS 构建输入输出可复现', () => {
+  assert.ok(fs.existsSync(path.join(root, 'css', 'tailwind-input.css')), '缺少 css/tailwind-input.css 输入文件');
+  assert.ok(fs.existsSync(path.join(root, 'css', 'tailwind.css')), '缺少 css/tailwind.css 生成输出');
+  const input = read('css/tailwind-input.css').replace(/\r\n/g, '\n').trim();
+  assert.equal(input, '@tailwind base;\n@tailwind components;\n@tailwind utilities;');
+  const output = read('css/tailwind.css');
+  assert.ok(output.length >= 5000, 'tailwind.css 输出过短，疑似未完整生成');
+  assert.match(output, /\.hidden\{display:none\}/);
+  assert.match(output, /@media \(min-width:1024px\)/);
+  const readme = read('README.md');
+  assert.match(readme, /Tailwind CSS 3\.4\.17/, 'README 必须固定 Tailwind CSS 3.4.17');
+  assert.match(readme, /本地预编译/, 'README 必须说明本地预编译');
+  assert.match(readme, /npx[\s\S]{0,200}tailwindcss@3\.4\.17[\s\S]{0,400}(?:--minify[\s\S]{0,200}--content|--content[\s\S]{0,200}--minify)[\s\S]{0,300}\.\/\*\.html[\s\S]{0,300}\.\/js\/\*\.js/, 'README 必须含 pinned 3.4.17 minify 生成命令');
+});
+
 test('登录门控具备失败限速、完整有效期和安全回跳', () => {
   const login = read('login.html');
   const guard = read('js/auth-guard.js');
