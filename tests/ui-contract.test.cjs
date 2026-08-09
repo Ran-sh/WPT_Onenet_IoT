@@ -2273,6 +2273,57 @@ function buildSettingsDom() {
   return { ...h, els };
 }
 
+test('R68 新浏览器预填部署端点标识且不自动配置', async () => {
+  let fetchCount = 0;
+  const fetchImpl = async () => {
+    fetchCount++;
+    throw new Error('R68: 初始化不得发起网络请求');
+  };
+
+  /* 场景1：全新浏览器（空 storage）——预填部署默认端点标识，Token 保持空且不写入存储、不请求网络。 */
+  const fresh = buildSettingsDom();
+  const { storage: freshStorage } = loadPage('js/settings-page.js', fresh, {}, fetchImpl);
+  await flushAsync();
+  assert.equal(fresh.els.txProductId.value, '1iS397oJFL');
+  assert.equal(fresh.els.txDeviceName.value, '20260001');
+  assert.equal(fresh.els.rxProductId.value, 'A60e06YLYw');
+  assert.equal(fresh.els.rxDeviceName.value, 'RX_001');
+  assert.equal(fresh.els.txToken.value, '');
+  assert.equal(fresh.els.rxToken.value, '');
+  assert.match(fresh.els.txTokenHint.textContent, /未保存/);
+  assert.match(fresh.els.rxTokenHint.textContent, /未保存/);
+  assert.equal(fetchCount, 0);
+  assert.equal(freshStorage.size, 0);
+
+  /* 场景2：损坏主 store——回退默认端点标识，且原损坏字符串不被自动改写。 */
+  const corruptRaw = '{broken json';
+  const corrupt = buildSettingsDom();
+  const { storage: corruptStorage } = loadPage('js/settings-page.js', corrupt, { iot_onenet_devices_v1: corruptRaw }, fetchImpl);
+  await flushAsync();
+  assert.equal(corrupt.els.txProductId.value, '1iS397oJFL');
+  assert.equal(corrupt.els.txDeviceName.value, '20260001');
+  assert.equal(corrupt.els.rxProductId.value, 'A60e06YLYw');
+  assert.equal(corrupt.els.rxDeviceName.value, 'RX_001');
+  assert.equal(corruptStorage.get('iot_onenet_devices_v1'), corruptRaw);
+
+  /* 场景3：完整合法自定义配置——显示自定义值且优先于默认标识，Token 不回填、存储字符串不变。 */
+  const customRaw = JSON.stringify({
+    version: 1,
+    tx: { productId: 'TXP_CUSTOM', deviceName: 'TXN_CUSTOM', token: VALID_TOKEN },
+    rx: { productId: 'RXP_CUSTOM', deviceName: 'RXN_CUSTOM', token: 'res=r&et=1&sign=r' }
+  });
+  const custom = buildSettingsDom();
+  const { storage: customStorage } = loadPage('js/settings-page.js', custom, { iot_onenet_devices_v1: customRaw }, fetchImpl);
+  await flushAsync();
+  assert.equal(custom.els.txProductId.value, 'TXP_CUSTOM');
+  assert.equal(custom.els.txDeviceName.value, 'TXN_CUSTOM');
+  assert.equal(custom.els.rxProductId.value, 'RXP_CUSTOM');
+  assert.equal(custom.els.rxDeviceName.value, 'RXN_CUSTOM');
+  assert.equal(custom.els.txToken.value, '');
+  assert.equal(custom.els.rxToken.value, '');
+  assert.equal(customStorage.get('iot_onenet_devices_v1'), customRaw);
+});
+
 test('R4/R5 设置页独立表单：Token 不回填、保存只写本端、测试只 GET', async () => {
   const initialStorage = {
     iot_onenet_devices_v1: JSON.stringify({
