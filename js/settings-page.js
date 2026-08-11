@@ -26,6 +26,23 @@
         });
     }
 
+    /* 连接测试失败分类：只读取 error.name/error.message 做固定白名单映射，
+     * 绝不把服务端/网络错误原文拼入返回值，避免泄露敏感细节。 */
+    function formatConnectionTestFailure(error) {
+        var name = error && typeof error === 'object' ? String(error.name || '') : '';
+        var msg = error && typeof error.message !== 'undefined' ? String(error.message) : '';
+        var lower = (name + ' ' + msg).toLowerCase();
+        var has = function (keyword) { return lower.indexOf(keyword) !== -1; };
+        if (has('401') || has('鉴权失败') || has('token')) return 'Token 无效或已过期，请重新生成并保存';
+        if (has('403') || has('拒绝访问') || has('产品') || has('设备名')) return '产品或设备标识无权访问';
+        if (name === 'AbortError' || has('请求超时') || has('timeout')) return '请求超时，请检查网络';
+        if (has('429') || has('请求过于频繁')) return '请求过于频繁，请稍后重试';
+        if (has('503') || has('服务暂不可用')) return 'OneNET 服务暂不可用';
+        if (has('404') || has('服务未找到')) return '接口地址错误，请检查平台配置';
+        if ((name === 'TypeError' && has('failed to fetch')) || has('network') || has('cors') || has('网络') || has('跨域')) return '网络或跨域请求失败';
+        return '连接失败，请检查网络、Token 和端点配置';
+    }
+
     /* 读取当前已保存状态：Token 输入永远保持空，仅显示提示。 */
     function refreshEndpointState(deviceKey) {
         var config = typeof getOneNetConfig === 'function' ? getOneNetConfig(deviceKey) : null;
@@ -34,7 +51,12 @@
         var tokenHint = byId(deviceKey + 'TokenHint');
         if (tokenInput) tokenInput.value = '';
         if (tokenHint) {
-            tokenHint.textContent = config && config.TOKEN ? '已保存，留空不修改' : '未保存 Token';
+            var hintText = '未保存 Token';
+            if (config && config.TOKEN) {
+                var expiry = typeof getOneNetTokenExpiryMs === 'function' ? getOneNetTokenExpiryMs(config.TOKEN) : null;
+                hintText = expiry !== null && expiry <= Date.now() ? '已过期，请重新生成 Token' : '已保存，留空不修改';
+            }
+            tokenHint.textContent = hintText;
         }
         var productInput = byId(deviceKey + 'ProductId');
         var deviceInput = byId(deviceKey + 'DeviceName');
@@ -85,13 +107,18 @@
             setStatus(deviceKey, '测试失败：该端未保存配置');
             return;
         }
+        var expiry = typeof getOneNetTokenExpiryMs === 'function' ? getOneNetTokenExpiryMs(config.TOKEN) : null;
+        if (expiry !== null && expiry <= Date.now()) {
+            setStatus(deviceKey, '测试结果：Token 已过期，请重新生成并保存');
+            return;
+        }
         setEndpointBusy(deviceKey, true);
         try {
             var data = await OneNetService.getLatestData(deviceKey);
             var cls = WptUi.classifyEndpoint(data, null);
             setStatus(deviceKey, '测试结果：' + cls.label);
         } catch (e) {
-            setStatus(deviceKey, '测试结果：获取失败');
+            setStatus(deviceKey, '测试结果：' + formatConnectionTestFailure(e));
         } finally {
             setEndpointBusy(deviceKey, false);
         }

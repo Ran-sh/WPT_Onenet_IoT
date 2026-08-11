@@ -78,6 +78,7 @@ function loadWebModules(initialStorage = {}, fetchImpl, options = {}) {
     ' DATA_MODEL_VERSION: typeof DATA_MODEL_VERSION !== "undefined" ? DATA_MODEL_VERSION : undefined,' +
     ' DEFAULT_DEVICE_MODELS: typeof DEFAULT_DEVICE_MODELS !== "undefined" ? DEFAULT_DEVICE_MODELS : undefined,' +
     ' getOneNetConfig: typeof getOneNetConfig === "function" ? getOneNetConfig : undefined,' +
+    ' getOneNetTokenExpiryMs: typeof getOneNetTokenExpiryMs === "function" ? getOneNetTokenExpiryMs : undefined,' +
     ' saveOneNetDeviceConfig: typeof saveOneNetDeviceConfig === "function" ? saveOneNetDeviceConfig : undefined,' +
     ' deviceStorageKey: typeof deviceStorageKey === "function" ? deviceStorageKey : undefined,' +
     ' isReceiverStartAllowed: typeof isReceiverStartAllowed === "function" ? isReceiverStartAllowed : undefined,' +
@@ -159,7 +160,7 @@ test('网页活动资源统一标记V6.0.0', () => {
   assert.match(read('js/mobile-nav.js'), /V6\.0\.0/);
   assert.match(read('css/dashboard.css'), /V6\.0\.0/);
   assert.match(read('service-worker.js'), /WPT Monitor V6\.0\.0/);
-  assert.match(read('service-worker.js'), /wpt-v6-0-0-web-13/);
+  assert.match(read('service-worker.js'), /wpt-v6-0-0-web-14/);
   assert.match(read('README.md'), /V6\.0\.0/);
 });
 
@@ -187,7 +188,7 @@ test('CSS统一入口为dashboard.css且Service Worker预缓存同步升级', ()
   const worker = read('service-worker.js');
   assert.match(worker, /BASE \+ '\/css\/dashboard\.css'/);
   assert.doesNotMatch(worker, /dashboard-v5/);
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
 });
 
 test('R65 生产页面使用本地预编译 Tailwind', () => {
@@ -204,7 +205,7 @@ test('R65 生产页面使用本地预编译 Tailwind', () => {
 
 test('R66 Service Worker 缓存本地 Tailwind', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/, 'SW 缓存版本必须升级为 web-13');
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/, 'SW 缓存版本必须升级为 web-14');
   assert.match(worker, /BASE \+ '\/css\/tailwind\.css'/, 'SW 必须预缓存本地 css/tailwind.css');
   assert.doesNotMatch(worker, /cdn\.tailwindcss\.com/, 'SW CDN_HOSTS 不得再包含 cdn.tailwindcss.com');
   assert.match(worker, /cdnjs\.cloudflare\.com/, 'SW CDN_HOSTS 必须保留 cdnjs.cloudflare.com');
@@ -481,7 +482,7 @@ const DUAL_CONFIG = JSON.stringify({
 });
 
 /* 通过 R2 严格校验的测试 Token / 旧单设备配置种子。 */
-const VALID_TOKEN = 'version=2026-08-08&res=products%2F1&et=1800&method=sha1&sign=abc';
+const VALID_TOKEN = 'version=2026-08-08&res=products%2F1&et=4102444800&method=sha1&sign=abc';
 const LEGACY_CFG = { productId: 'p', deviceName: 'd', token: VALID_TOKEN };
 
 /* 完整 TX 遥测：V/I/F/S，times 可显式指定（缺省为 now-1000*(i+1)）。 */
@@ -1798,7 +1799,7 @@ test('P6 工业视觉约束：无渐变、纯色基线、响应式与可访问',
 
 test('P7 PWA 缓存版本升级并预缓存新资源', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
   for (const asset of ['js/ui-common.js', 'js/index-page.js', 'js/monitoring-page.js']) {
     assert.match(worker, new RegExp(asset.replace(/[.]/g, '\\.')), asset);
   }
@@ -2338,6 +2339,117 @@ test('R68 新浏览器预填部署端点标识且不自动配置', async () => {
   assert.equal(customStorage.get('iot_onenet_devices_v1'), customRaw);
 });
 
+/* ========== R70：设置页连接诊断：Token 过期预检与固定失败分类（Token 不回显） ========== */
+test('R70a getOneNetTokenExpiryMs 纯函数：合法/缺失/非十进制/重复/越界确定返回且不泄露 Token', () => {
+  const { api } = loadWebModules({});
+  const f = api.getOneNetTokenExpiryMs;
+  assert.equal(typeof f, 'function');
+  assert.equal(f('version=2026-08-08&res=products%2F1&et=4102444800&method=sha1&sign=abc'), 4102444800000);
+  assert.equal(f('res=a&et=8640000000000&sign=b'), 8640000000000000);
+  assert.equal(f(null), null);
+  assert.equal(f(undefined), null);
+  assert.equal(f(123), null);
+  assert.equal(f('res=a&sign=b'), null);
+  assert.equal(f('res=a&et=abc&sign=b'), null);
+  assert.equal(f('res=a&et=0&sign=b'), null);
+  assert.equal(f('res=a&et=1&et=2&sign=b'), null);
+  assert.equal(f('res=a&et=12345678901234&sign=b'), null);
+  assert.equal(f('res=a&et=9000000000000&sign=b'), null);
+});
+
+test('R70b 设置页 Token 过期预检：hint 已过期、点击不发请求；未来 Token 成功 GET 行为保持', async () => {
+  /* 场景1：已保存 Token 已过期（et=1）——hint 显示已过期，点击测试零请求并显示精确提示。 */
+  let fetchCount = 0;
+  const noFetch = async () => { fetchCount++; throw new Error('R70b: 已过期 Token 不得发起请求'); };
+  const expired = buildSettingsDom();
+  const expiredRaw = JSON.stringify({
+    version: 1,
+    tx: { productId: 'A60e06YLYw', deviceName: '20260001', token: 'res=t&et=1&sign=t' },
+    rx: {}
+  });
+  loadPage('js/settings-page.js', expired, { iot_onenet_devices_v1: expiredRaw }, noFetch);
+  await flushAsync();
+  assert.match(expired.els.txTokenHint.textContent, /已过期/);
+  assert.equal(expired.els.txToken.value, '');
+  expired.els.txTestBtn.dispatch('click');
+  await flushAsync();
+  await flushAsync();
+  assert.equal(fetchCount, 0);
+  assert.equal(expired.els.txStatus.textContent, '测试结果：Token 已过期，请重新生成并保存');
+  assert.equal(expired.els.txTestBtn.disabled, false);
+
+  /* 场景2：未来 Token——hint 保持已保存，测试成功 GET（>=2）且无 POST、按钮解锁。 */
+  let getCount = 0;
+  let postCount = 0;
+  const fetchImpl = async (url, options) => {
+    if (options && options.method === 'POST') {
+      postCount++;
+      return { ok: true, status: 200, json: async () => ({ code: 0, data: { code: 0 } }) };
+    }
+    getCount++;
+    if (url.includes('/thingmodel/query-device-property')) {
+      return { ok: true, status: 200, json: async () => ({ code: 0, data: fullTxItems(Date.now()) }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ code: 0, data: { status: 1 } }) };
+  };
+  const harness = buildSettingsDom();
+  const futureRaw = JSON.stringify({
+    version: 1,
+    tx: { productId: 'A60e06YLYw', deviceName: '20260001', token: VALID_TOKEN },
+    rx: {}
+  });
+  loadPage('js/settings-page.js', harness, { iot_onenet_devices_v1: futureRaw }, fetchImpl);
+  await flushAsync();
+  assert.equal(harness.els.txToken.value, '');
+  assert.match(harness.els.txTokenHint.textContent, /已保存/);
+  harness.els.txTestBtn.dispatch('click');
+  await flushAsync();
+  await flushAsync();
+  assert.equal(harness.els.txTestBtn.disabled, false);
+  assert.match(harness.els.txStatus.textContent, /测试结果：实时/);
+  assert.ok(getCount >= 2);
+  assert.equal(postCount, 0);
+});
+
+test('R70c 设置页连接测试失败固定分类：已知错误精确提示、未知不回显、按钮解锁、仅 GET', async () => {
+  const cases = [
+    { err: () => new Error('鉴权失败(401): 请检查 Token'), expected: '测试结果：Token 无效或已过期，请重新生成并保存' },
+    { err: () => new Error('拒绝访问(403): 检查产品/设备名'), expected: '测试结果：产品或设备标识无权访问' },
+    { err: () => { const e = new Error('请求超时'); e.name = 'AbortError'; return e; }, expected: '测试结果：请求超时，请检查网络' },
+    { err: () => new Error('请求过于频繁(429): 请稍后刷新'), expected: '测试结果：请求过于频繁，请稍后重试' },
+    { err: () => new Error('服务暂不可用(503): 服务器维护中'), expected: '测试结果：OneNET 服务暂不可用' },
+    { err: () => new Error('服务未找到(404): 检查 BASE_URL'), expected: '测试结果：接口地址错误，请检查平台配置' },
+    { err: () => new TypeError('Failed to fetch'), expected: '测试结果：网络或跨域请求失败' },
+    { err: () => new Error('synthetic-sensitive-detail'), expected: '测试结果：连接失败，请检查网络、Token 和端点配置' }
+  ];
+  for (const c of cases) {
+    let postCount = 0;
+    const fetchImpl = async (url, options) => {
+      if (options && options.method === 'POST') {
+        postCount++;
+        return { ok: true, status: 200, json: async () => ({ code: 0, data: { code: 0 } }) };
+      }
+      throw c.err();
+    };
+    const harness = buildSettingsDom();
+    const raw = JSON.stringify({
+      version: 1,
+      tx: { productId: 'A60e06YLYw', deviceName: '20260001', token: VALID_TOKEN },
+      rx: {}
+    });
+    loadPage('js/settings-page.js', harness, { iot_onenet_devices_v1: raw }, fetchImpl);
+    await flushAsync();
+    harness.els.txTestBtn.dispatch('click');
+    await flushAsync();
+    await flushAsync();
+    assert.equal(harness.els.txStatus.textContent, c.expected);
+    assert.equal(harness.els.txTestBtn.disabled, false);
+    assert.equal(postCount, 0);
+    assert.ok(!harness.els.txStatus.textContent.includes('synthetic-sensitive-detail'));
+    assert.ok(!harness.els.txTokenHint.textContent.includes('synthetic-sensitive-detail'));
+  }
+});
+
 test('R4/R5 设置页独立表单：Token 不回填、保存只写本端、测试只 GET', async () => {
   const initialStorage = {
     iot_onenet_devices_v1: JSON.stringify({
@@ -2504,7 +2616,7 @@ test('R4/R7 设置页结构契约：双端表单、模型摘要、无任意编�
 
 test('R8 SW web-3 预缓存设置页资源，设置样式无渐变', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
   assert.match(worker, /js\/settings-page\.js/);
   const css = read('css/dashboard.css');
   assert.doesNotMatch(css, /gradient\(/);
@@ -3190,7 +3302,7 @@ test('R27 控制页样式无渐变且响应式', () => {
 
 test('R28 SW web-4 预缓存控制模块', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
   assert.match(worker, /js\/control-core\.js/);
   assert.match(worker, /js\/control-page\.js/);
 });
@@ -3435,7 +3547,7 @@ test('R38 control-form 手机布局不换行且可收缩', () => {
 
 test('R39 SW web-5 资源清单同步', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
   for (const asset of ['js/ui-common.js', 'js/index-page.js', 'js/monitoring-page.js', 'js/settings-page.js', 'js/control-core.js', 'js/control-page.js']) {
     assert.match(worker, new RegExp(asset.replace(/[.]/g, '\\.')), asset);
   }
@@ -3775,9 +3887,9 @@ test('R43 图表源时间/双轴/负数/无 Chart 降级', async () => {
   assert.ok(harness2.els.historyTableBody.children.length >= 1);
 });
 
-test('R45 SW 同源全 network-first 与历史资源（web-13）', () => {
+test('R45 SW 同源全 network-first 与历史资源（web-14）', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
   assert.match(worker, /js\/history-core\.js/);
   assert.match(worker, /js\/history-page\.js/);
   assert.match(worker, /url\.origin === self\.location\.origin/);
@@ -4030,9 +4142,9 @@ test('R52e history-page 无重复死代码', () => {
   assert.doesNotMatch(page, /var currentMode/);
 });
 
-test('R52f/R64 SW 缓存版本 web-13', () => {
+test('R52f/R64 SW 缓存版本 web-14', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
 });
 
 /* ========== R54-R57 告警引擎与告警中心 ========== */
@@ -4613,7 +4725,7 @@ test('R56 监测页告警摘要与异常隔离', async () => {
   assert.equal(harness2.rxSummary.status.textContent, '实时');
 });
 
-test('R57 告警样式与 SW web-13 资源', () => {
+test('R57 告警样式与 SW web-14 资源', () => {
   const html = read('index.html');
   assert.match(html, /id=["']homeAlertSummary["'][^>]*href=["']\/alerts["']/);
   assert.match(html, /js\/alert-engine\.js/);
@@ -4630,7 +4742,7 @@ test('R57 告警样式与 SW web-13 资源', () => {
   assert.match(css, /@media\s*\(max-width:\s*520px\)/);
   assert.match(css, /:focus-visible/);
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-13'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
   assert.match(worker, /js\/alert-engine\.js/);
   assert.match(worker, /js\/alerts-page\.js/);
 });

@@ -61,6 +61,32 @@ function isValidOneNetToken(token) {
     return token.indexOf('res=') !== -1 && token.indexOf('et=') !== -1 && token.indexOf('sign=') !== -1;
 }
 
+/* 纯函数：解析 Token 中唯一的十进制 et 秒字段为毫秒时间戳，供设置页过期预检；
+ * 输入非字符串、格式不合法、et 缺失/非十进制/重复/数值越界一律返回 null；
+ * 不修改、不解码、不记录 token，仅返回到期时间或 null。 */
+function getOneNetTokenExpiryMs(token) {
+    if (typeof token !== 'string') return null;
+    if (!token || token.length > 2048) return null;
+    if (!isValidOneNetToken(token)) return null;
+    var parts = token.split('&');
+    var etValue = null;
+    var etCount = 0;
+    for (var i = 0; i < parts.length; i++) {
+        if (parts[i].indexOf('et=') === 0) {
+            etCount++;
+            etValue = parts[i].slice(3);
+        }
+    }
+    if (etCount !== 1) return null;
+    if (!/^[1-9][0-9]{0,12}$/.test(etValue)) return null;
+    var seconds = Number(etValue);
+    if (!Number.isSafeInteger(seconds)) return null;
+    var milliseconds = seconds * 1000;
+    if (!Number.isSafeInteger(milliseconds)) return null;
+    if (milliseconds > 8640000000000000) return null;
+    return milliseconds;
+}
+
 /* 纯校验/规范化 helper：save/read 共用，设置页不得复制另一套规则。 */
 function validateOneNetDeviceConfig(config) {
     if (!config || typeof config !== 'object') return { ok: false };
