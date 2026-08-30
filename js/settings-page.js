@@ -245,11 +245,8 @@
     }
 
     function logout() {
-        askConfirm('退出登录', '确定要退出当前账号吗？', function () {
-            localStorage.removeItem('lastLoginTime');
-            localStorage.removeItem('wpt_persistent_auth');
-            if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('wpt_session_auth');
-            window.location.href = 'login.html';
+        askConfirm('退出登录', '确定要退出当前 Cloudflare Access 会话吗？', function () {
+            window.location.replace('/cdn-cgi/access/logout');
         });
     }
 

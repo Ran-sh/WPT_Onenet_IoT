@@ -5,7 +5,7 @@
   "short_name": "WPT Monitor",
   "description": "WPT 全桥逆变器实时监测、历史分析与远程控制",
   "lang": "zh-CN",
-  "start_url": "/login.html?source=pwa",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone"],

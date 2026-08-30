@@ -2,7 +2,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const crypto = require('node:crypto');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
@@ -127,7 +126,7 @@ test('视觉系统覆盖移动端、可访问焦点和减少动画偏好', () =>
   assert.match(css, /--wpt-accent/);
 });
 
-test('所有受保护页面在业务脚本前加载统一登录守卫', () => {
+test('所有受保护页面在业务脚本前加载兼容登录守卫（Access 模型）', () => {
   for (const page of pages.filter((name) => name !== 'login')) {
     const html = read(`${page}.html`);
     const guardAt = html.indexOf('js/auth-guard.js');
@@ -138,10 +137,12 @@ test('所有受保护页面在业务脚本前加载统一登录守卫', () => {
 
   assert.ok(fs.existsSync(path.join(root, 'js', 'auth-guard.js')), '缺少统一登录守卫脚本');
   const guard = read('js/auth-guard.js');
-  assert.match(guard, /sessionStorage/);
-  assert.match(guard, /lastLoginTime/);
-  assert.match(guard, /login\.html/);
-  assert.match(read('login.html'), /sessionStorage\.setItem/);
+  const login = read('login.html');
+  assert.match(guard, /V6\.0\.0/);
+  assert.doesNotMatch(guard, /sessionStorage|localStorage|window\.location|login\.html/);
+  assert.doesNotMatch(login, /sessionStorage|localStorage|loginForm|password|username/);
+  assert.match(login, /href=["']\/["']/);
+  assert.match(login, /cdn-cgi\/access\/logout/);
 });
 
 test('网页活动资源统一标记V6.0.0', () => {
@@ -160,7 +161,7 @@ test('网页活动资源统一标记V6.0.0', () => {
   assert.match(read('js/mobile-nav.js'), /V6\.0\.0/);
   assert.match(read('css/dashboard.css'), /V6\.0\.0/);
   assert.match(read('service-worker.js'), /WPT Monitor V6\.0\.0/);
-  assert.match(read('service-worker.js'), /wpt-v6-0-0-web-14/);
+  assert.match(read('service-worker.js'), /wpt-v6-0-0-web-15/);
   assert.match(read('README.md'), /V6\.0\.0/);
 });
 
@@ -176,6 +177,7 @@ test('所有页面允许缩放并提供一致的PWA入口', () => {
   const manifest = JSON.parse(read('manifest.json'));
   assert.equal(manifest.version, 'V6.0.0');
   assert.equal(manifest.scope, '/');
+  assert.equal(manifest.start_url, '/');
   assert.ok(manifest.icons.length > 0);
   for (const icon of manifest.icons) {
     assert.ok(fs.existsSync(path.join(root, icon.src.replace(/^\//, ''))), `PWA图标不存在: ${icon.src}`);
@@ -188,7 +190,7 @@ test('CSS统一入口为dashboard.css且Service Worker预缓存同步升级', ()
   const worker = read('service-worker.js');
   assert.match(worker, /BASE \+ '\/css\/dashboard\.css'/);
   assert.doesNotMatch(worker, /dashboard-v5/);
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-15'/);
 });
 
 test('R65 生产页面使用本地预编译 Tailwind', () => {
@@ -205,7 +207,7 @@ test('R65 生产页面使用本地预编译 Tailwind', () => {
 
 test('R66 Service Worker 缓存本地 Tailwind', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/, 'SW 缓存版本必须升级为 web-14');
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-15'/, 'SW 缓存版本必须升级为 web-15');
   assert.match(worker, /BASE \+ '\/css\/tailwind\.css'/, 'SW 必须预缓存本地 css/tailwind.css');
   assert.doesNotMatch(worker, /cdn\.tailwindcss\.com/, 'SW CDN_HOSTS 不得再包含 cdn.tailwindcss.com');
   assert.match(worker, /cdnjs\.cloudflare\.com/, 'SW CDN_HOSTS 必须保留 cdnjs.cloudflare.com');
@@ -227,17 +229,20 @@ test('R67 Tailwind CSS 构建输入输出可复现', () => {
   assert.match(readme, /npx[\s\S]{0,200}tailwindcss@3\.4\.17[\s\S]{0,400}(?:--minify[\s\S]{0,200}--content|--content[\s\S]{0,200}--minify)[\s\S]{0,300}\.\/\*\.html[\s\S]{0,300}\.\/js\/\*\.js/, 'README 必须含 pinned 3.4.17 minify 生成命令');
 });
 
-test('登录门控具备失败限速、完整有效期和安全回跳', () => {
+test('访问边界迁移至 Cloudflare Access：无本地认证残留', () => {
   const login = read('login.html');
   const guard = read('js/auth-guard.js');
-  const expectedHash = crypto.createHash('sha256').update('admin:admin123').digest('hex');
-  assert.match(login, new RegExp(expectedHash));
-  assert.match(login, /wpt_login_attempts/);
-  assert.match(login, /lockedUntil/);
-  assert.match(login, /wpt_persistent_auth/);
-  assert.match(login, /getSafeNextPath/);
-  assert.match(guard, /legacyAge\s*>=\s*0/);
-  assert.match(guard, /expiresAt/);
+  const page = read('js/settings-page.js');
+  const readme = read('README.md');
+  assert.doesNotMatch(login, /<script/i);
+  assert.doesNotMatch(login, /sessionStorage|localStorage/);
+  assert.doesNotMatch(guard, /sessionStorage|localStorage|window\.location/);
+  assert.doesNotMatch(page, /sessionStorage|localStorage/);
+  assert.match(page, /window\.location\.replace\('\/cdn-cgi\/access\/logout'\)/);
+  assert.match(read('settings.html'), /Cloudflare Access/);
+  assert.match(readme, /访问说明页/);
+  assert.doesNotMatch(readme, /普通登录写入|连续失败5次|自动登录/);
+  assert.match(readme, /至少一个明确的 Allow 策略/);
 });
 
 test('预览数据明确离线且控制值符合固件边界', () => {
@@ -431,6 +436,8 @@ test('Service Worker采用同源全网络优先并立即接管新版本', () => 
   assert.match(worker, /skipWaiting/);
   assert.match(worker, /clients\.claim/);
   assert.match(worker, /icon\.svg/);
+  assert.match(worker, /request\.mode === 'navigate'/);
+  assert.doesNotMatch(worker, /\.html/);
 });
 
 test('控制页命令同端一次一条、finally 解锁且无 2s 延时伪装成功', () => {
@@ -840,7 +847,13 @@ test('R1 设备详情仅数值 1 且未禁用才在线', async () => {
     [{ status: '在线' }, false],
     [{ status: '1' }, false],
     [{ status: 1, enable_status: false }, false],
+    [{ status: 1, enable_status: 0 }, false],
+    [{ status: 1, enable_status: '0' }, false],
+    [{ status: 1, enable_status: null }, false],
+    [{ status: 1, enable_status: '' }, false],
+    [{ status: 1, enable_status: {} }, false],
     [{ status: 1, enable_status: true }, true],
+    [{ status: 1, enable_status: 1 }, true],
     [{ status: 1 }, true]
   ];
   for (const [detail, expected] of cases) {
@@ -1229,6 +1242,40 @@ test('R7 按时间戳对齐 TX/RX 历史', () => {
   assert.equal(rx.length, 4);
 });
 
+test('R7 时间配对采用全局最优而非逐个贪心', () => {
+  const { api } = loadWebModules({});
+  const item = (timestamp, deviceKey) => ({ deviceKey, timestamp, timeSource: 'onenet', data: {} });
+  const tx = [item(1000, 'tx'), item(2000, 'tx')];
+  const rx = [item(1900, 'rx')];
+  const aligned = api.alignHistoriesByTimestamp(tx, rx, 5000);
+  assert.equal(aligned.length, 2);
+  assert.equal(aligned[0].tx.timestamp, 1000);
+  assert.equal(aligned[0].rx, null);
+  assert.equal(aligned[1].tx.timestamp, 2000);
+  assert.equal(aligned[1].rx.timestamp, 1900);
+  assert.equal(tx.length, 2);
+  assert.equal(rx.length, 1);
+});
+
+test('R1 乐观显示值不与云端源时间混写入历史', async () => {
+  const now = 1749999970000;
+  const propertyData = fullTxItems(now).concat([
+    { identifier: 'SetFreq', value: 100000, data_type: 'int32', time: now - 3000 }
+  ]);
+  const { api, storage } = loadWebModules({
+    iot_onenet_config: JSON.stringify(LEGACY_CFG),
+    iot_latest_data_tx: JSON.stringify({ setfreq: 200 }),
+    iot_control_locks_tx: JSON.stringify({ setfreq: now - 1000 })
+  }, makePropertyFetch(propertyData, 1), { nowMs: now });
+
+  const latest = await api.OneNetService.getLatestData('tx');
+  const history = JSON.parse(storage.get('iot_history_data_tx'));
+  const newest = history[history.length - 1];
+  assert.equal(latest.setfreq, 200, '3s 乐观窗口内当前显示仍保留确认值');
+  assert.equal(newest.timestamp, now - 4000, '历史沿用本次云端遥测源时间');
+  assert.equal(newest.data.setfreq, 100, '历史必须记录与源时间同批的云端值');
+});
+
 test('R8 TX/RX 预览数据独立且明确离线不新鲜', () => {
   const { api } = loadWebModules({});
   const txMock = api.OneNetService.getMockData('tx');
@@ -1571,10 +1618,23 @@ test('P1 WptUi 端点分类与格式化工具', () => {
   assert.equal(api.WptUi.formatSourceTime('bad'), '--');
   assert.equal(api.WptUi.formatSourceTime(0), '--');
 
-  assert.equal(api.WptUi.formatAge(500), '刚刚');
-  assert.equal(api.WptUi.formatAge(3000), '3秒前');
-  assert.equal(api.WptUi.formatAge(120000), '2分钟前');
+  assert.equal(api.WptUi.formatAge(0), '0天0时0分0秒前');
+  assert.equal(api.WptUi.formatAge(500), '0天0时0分0秒前');
+  assert.equal(api.WptUi.formatAge(3000), '0天0时0分3秒前');
+  assert.equal(api.WptUi.formatAge(120000), '0天0时2分0秒前');
+  assert.equal(api.WptUi.formatAge(86399999), '0天23时59分59秒前');
+  assert.equal(api.WptUi.formatAge(86400000), '1天0时0分0秒前');
+  assert.equal(api.WptUi.formatAge(90061000), '1天1时1分1秒前');
+  assert.equal(api.WptUi.formatAge(-1), '0天0时0分0秒前');
   assert.equal(api.WptUi.formatAge('x'), '--');
+  assert.equal(api.WptUi.formatAge(NaN), '--');
+  assert.equal(api.WptUi.formatAge(Infinity), '--');
+  assert.equal(api.WptUi.formatAge(-Infinity), '--');
+
+  const monitoringHtml = read('monitoring.html');
+  assert.equal((monitoringHtml.match(/距上次上报/g) || []).length, 2);
+  assert.equal((monitoringHtml.match(/数据年龄/g) || []).length, 0);
+  assert.equal((monitoringHtml.match(/data-role=["']data-age["']/g) || []).length, 2);
 
   assert.equal(api.WptUi.formatMetric(12.345, 2, 'V'), '12.35V');
   assert.equal(api.WptUi.formatMetric(-0.5, 1, 'A'), '-0.5A');
@@ -1799,7 +1859,7 @@ test('P6 工业视觉约束：无渐变、纯色基线、响应式与可访问',
 
 test('P7 PWA 缓存版本升级并预缓存新资源', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-15'/);
   for (const asset of ['js/ui-common.js', 'js/index-page.js', 'js/monitoring-page.js']) {
     assert.match(worker, new RegExp(asset.replace(/[.]/g, '\\.')), asset);
   }
@@ -2532,16 +2592,13 @@ test('R4 未保存 Token 时留空保存失败且不写存储', async () => {
   assert.equal(storage.has('iot_onenet_devices_v1'), false);
 });
 
-test('R6 精确数据维护：逐端清除与 clearAll 保留凭据/登录/偏好', () => {
+test('R6 精确数据维护：逐端清除与 clearAll 保留凭据/偏好', () => {
   const initialStorage = {
     iot_onenet_devices_v1: JSON.stringify({
       version: 1,
       tx: { productId: 'txp', deviceName: 'txd', token: VALID_TOKEN },
       rx: { productId: 'rxp', deviceName: 'rxd', token: 'res=r&et=1&sign=r' }
     }),
-    wpt_session_auth: 'sess',
-    wpt_persistent_auth: 'persist',
-    lastLoginTime: '123',
     iot_config: JSON.stringify({ soundAlert: true }),
     iot_latest_data_tx: '{}', iot_control_locks_tx: '{}', iot_history_data_tx: '[]',
     iot_latest_data_rx: '{}', iot_control_locks_rx: '{}', iot_history_data_rx: '[]',
@@ -2569,9 +2626,6 @@ test('R6 精确数据维护：逐端清除与 clearAll 保留凭据/登录/偏�
     assert.equal(storage.has(key), false, key);
   }
   assert.ok(storage.has('iot_onenet_devices_v1'));
-  assert.ok(storage.has('wpt_session_auth'));
-  assert.ok(storage.has('wpt_persistent_auth'));
-  assert.ok(storage.has('lastLoginTime'));
   assert.ok(storage.has('iot_config'));
 
   /* clearOneNetDeviceConfig：只清本端配置+本端运行数据 */
@@ -2616,7 +2670,7 @@ test('R4/R7 设置页结构契约：双端表单、模型摘要、无任意编�
 
 test('R8 SW web-3 预缓存设置页资源，设置样式无渐变', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-15'/);
   assert.match(worker, /js\/settings-page\.js/);
   const css = read('css/dashboard.css');
   assert.doesNotMatch(css, /gradient\(/);
@@ -2723,12 +2777,9 @@ test('R12 rx_safe 显示名为启动门控且协议字段不变', () => {
   assert.equal(safe.step, 1);
 });
 
-test('R13 clearAllRuntimeData 无条件删除三个 V2 键且保留凭据/登录/偏好/未知键', () => {
+test('R13 clearAllRuntimeData 无条件删除三个 V2 键且保留凭据/偏好/未知键', () => {
   const initialStorage = {
     iot_onenet_devices_v1: JSON.stringify({ version: 1, tx: { productId: 'txp', deviceName: 'txd', token: VALID_TOKEN } }),
-    wpt_session_auth: 'sess',
-    wpt_persistent_auth: 'persist',
-    lastLoginTime: '123',
     iot_config: JSON.stringify({ soundAlert: true }),
     my_custom_key: 'keep-me',
     iot_latest_data_tx: '{}', iot_control_locks_tx: '{}', iot_history_data_tx: '[]',
@@ -2745,9 +2796,6 @@ test('R13 clearAllRuntimeData 无条件删除三个 V2 键且保留凭据/登录
     assert.equal(storage.has(key), false, key);
   }
   assert.ok(storage.has('iot_onenet_devices_v1'));
-  assert.ok(storage.has('wpt_session_auth'));
-  assert.ok(storage.has('wpt_persistent_auth'));
-  assert.ok(storage.has('lastLoginTime'));
   assert.ok(storage.has('iot_config'));
   assert.equal(storage.get('my_custom_key'), 'keep-me');
 });
@@ -3030,7 +3078,8 @@ test('R20 WptControlCore 权限/校验/结果分类', () => {
   assert.equal(txp.live, false);
   assert.equal(txp.on, false);
   assert.equal(txp.setfreq, false);
-  assert.equal(txp.off, true);
+  /* 新契约：OFF 同样要求实时可用，离线/过期时全部控制禁用。 */
+  assert.equal(txp.off, false);
   txp = C.getTxPermissions({ config: configured, data: liveData, error: null, pending: true });
   assert.equal(txp.on, false);
   assert.equal(txp.off, false);
@@ -3051,7 +3100,9 @@ test('R20 WptControlCore 权限/校验/结果分类', () => {
   assert.equal(rxp.stop, true);
   rxp = C.getRxPermissions({ config: configured, data: null, error: new Error('x'), pending: false });
   assert.equal(rxp.start, false);
-  assert.equal(rxp.stop, true);
+  assert.equal(rxp.stop, false);
+  assert.equal(rxp.status, false);
+  assert.equal(rxp.rate, false);
   rxp = C.getRxPermissions({ config: configured, data: rxGate, error: null, pending: true });
   assert.equal(rxp.stop, false);
 
@@ -3194,7 +3245,7 @@ test('R22 TX 运行态 ON 与非法频率被拦截，OFF 防重入且异常解�
   assert.equal(harness.els.txOffBtn.disabled, false);
 });
 
-test('R23 RX START 门控确认后单次 POST；门控关闭与非法 RATE 拦截；STOP 离线仍尝试', async () => {
+test('R23 RX START 门控确认后单次 POST；门控关闭与非法 RATE 拦截；STOP 离线被拦截', async () => {
   const now = Date.now();
   const postBodies = [];
   const harness = buildControlDom();
@@ -3252,10 +3303,12 @@ test('R23 RX START 门控确认后单次 POST；门控关闭与非法 RATE 拦�
   loadControlPage(harness3, { iot_onenet_devices_v1: DUAL_CONFIG }, fetchImpl);
   await flushAsync();
   assert.equal(harness3.els.rxEndpointState.textContent, '离线');
-  assert.ok(!harness3.els.controlConfirmDialog.hidden);
   harness3.els.rxStopBtn.dispatch('click');
   await flushAsync();
-  assert.equal(stopPosts, 1);
+  /* 新契约：离线/详情失败时 STOP 一并禁用——不发 POST。 */
+  assert.equal(stopPosts, 0);
+  assert.match(harness3.els.controlStatus.textContent, /已拦截/);
+  assert.match(harness3.els.controlStatus.textContent, /实时数据不可用/);
 });
 
 test('R25 双端独立降级与共享轮询，页面不读旧缓存', async () => {
@@ -3302,7 +3355,7 @@ test('R27 控制页样式无渐变且响应式', () => {
 
 test('R28 SW web-4 预缓存控制模块', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-15'/);
   assert.match(worker, /js\/control-core\.js/);
   assert.match(worker, /js\/control-page\.js/);
 });
@@ -3547,7 +3600,7 @@ test('R38 control-form 手机布局不换行且可收缩', () => {
 
 test('R39 SW web-5 资源清单同步', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-15'/);
   for (const asset of ['js/ui-common.js', 'js/index-page.js', 'js/monitoring-page.js', 'js/settings-page.js', 'js/control-core.js', 'js/control-page.js']) {
     assert.match(worker, new RegExp(asset.replace(/[.]/g, '\\.')), asset);
   }
@@ -3887,15 +3940,17 @@ test('R43 图表源时间/双轴/负数/无 Chart 降级', async () => {
   assert.ok(harness2.els.historyTableBody.children.length >= 1);
 });
 
-test('R45 SW 同源全 network-first 与历史资源（web-14）', () => {
+test('R45 SW 同源全 network-first、导航不缓存（web-15）', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-15'/);
   assert.match(worker, /js\/history-core\.js/);
   assert.match(worker, /js\/history-page\.js/);
   assert.match(worker, /url\.origin === self\.location\.origin/);
   assert.match(worker, /Response\.error\(\)/);
   assert.match(worker, /CDN_HOSTS\.indexOf[\s\S]{0,80}cacheFirst/);
   assert.doesNotMatch(worker, /request\.mode === 'navigate' \? networkFirst/);
+  assert.match(worker, /request\.mode === 'navigate'/);
+  assert.doesNotMatch(worker, /\.html/);
 });
 
 /* ========== R47-R51 历史模块定点修正 ========== */
@@ -3978,7 +4033,7 @@ test('R48 查询竞态：pending 时切换模式后自动补发最新请求且�
   assert.ok(![...row.children].some((c) => c.textContent === '12.5'));
 });
 
-test('R49 历史页无内联样式、空态 hidden 与 SW 最终回退', () => {
+test('R49 历史页无内联样式、空态 hidden 与 SW 导航无缓存回退', () => {
   const html = read('history.html');
   assert.doesNotMatch(html, /style\s*=/i);
   assert.doesNotMatch(html, /<style/i);
@@ -3988,7 +4043,8 @@ test('R49 历史页无内联样式、空态 hidden 与 SW 最终回退', () => {
   assert.match(page, /\.hidden\s*=/);
   const worker = read('service-worker.js');
   assert.match(worker, /同源资源网络优先，CDN资源缓存优先/);
-  assert.match(worker, /login \|\| Response\.error\(\)/);
+  assert.doesNotMatch(worker, /login \|\| Response\.error\(\)/);
+  assert.match(worker, /request\.mode === 'navigate'\) return Response\.error\(\)/);
 });
 
 test('R50 TX 指标固定四项且历史响应按 limit 截断', async () => {
@@ -4142,9 +4198,9 @@ test('R52e history-page 无重复死代码', () => {
   assert.doesNotMatch(page, /var currentMode/);
 });
 
-test('R52f/R64 SW 缓存版本 web-14', () => {
+test('R52f/R64 SW 缓存版本 web-15', () => {
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-15'/);
 });
 
 /* ========== R54-R57 告警引擎与告警中心 ========== */
@@ -4725,7 +4781,7 @@ test('R56 监测页告警摘要与异常隔离', async () => {
   assert.equal(harness2.rxSummary.status.textContent, '实时');
 });
 
-test('R57 告警样式与 SW web-14 资源', () => {
+test('R57 告警样式与 SW web-15 资源', () => {
   const html = read('index.html');
   assert.match(html, /id=["']homeAlertSummary["'][^>]*href=["']\/alerts["']/);
   assert.match(html, /js\/alert-engine\.js/);
@@ -4742,7 +4798,7 @@ test('R57 告警样式与 SW web-14 资源', () => {
   assert.match(css, /@media\s*\(max-width:\s*520px\)/);
   assert.match(css, /:focus-visible/);
   const worker = read('service-worker.js');
-  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-14'/);
+  assert.match(worker, /CACHE\s*=\s*'wpt-v6-0-0-web-15'/);
   assert.match(worker, /js\/alert-engine\.js/);
   assert.match(worker, /js\/alerts-page\.js/);
 });
@@ -4965,4 +5021,162 @@ test('R69 云历史过滤 RX_Resistance=-1 且原始最新/本地历史保留', 
   const history = JSON.parse(storage2.get('iot_history_data_rx'));
   assert.ok(Array.isArray(history) && history.length >= 1);
   assert.ok(history.some((item) => item.data && item.data.rx_resistance === -1));
+});
+
+test('R1 历史快照压缩：V5 fallback 迁移、严格 timestamp、duplicate 路径也写回压缩/截断结果', async () => {
+  const fakeNow = 1749999970000;
+  const now = fakeNow;
+  const seeded = [];
+  const rejectZeroTs = 0;
+  const rejectFutureTs = now + 86400000;
+  const rejectLocalTs = now - 300000;
+  const rejectStringDataTs = now - 360123;
+  const rejectArrayDataTs = now - 420123;
+  const legacyEntry = (timestamp, tag) => ({
+    time: '2025-06-15 12:34',
+    fullTime: '2025-06-15 12:34:56',
+    timestamp,
+    data: {
+      voltage: 12.5,
+      current: 1.25,
+      freq: 100,
+      state: 2,
+      tag,
+      _raw: { V: 12.5 },
+      _propertyTimes: { V: now - 1000, I: now - 2000, F: now - 3000, S: now - 4000 },
+      _isOnline: true,
+      _isFresh: true,
+      _receivedAt: now - 1000,
+      _ageMs: 1234
+    }
+  });
+
+  for (let minuteOffset = 1441; minuteOffset >= 2; minuteOffset--) {
+    seeded.push(legacyEntry(String(now - 60000 * minuteOffset), `legacy-${minuteOffset}`));
+  }
+  seeded.push(legacyEntry(String(now - 4000), 'same-minute-legacy'));
+  seeded.push(legacyEntry(null, 'reject-null'));
+  seeded.push(legacyEntry(true, 'reject-bool'));
+  seeded.push(legacyEntry('', 'reject-empty'));
+  seeded.push(legacyEntry([now - 5000], 'reject-array'));
+  seeded.push(legacyEntry(rejectZeroTs, 'reject-zero'));
+  seeded.push(legacyEntry(rejectFutureTs, 'reject-future'));
+  seeded.push({ deviceKey: 'tx', timeSource: 'local', timestamp: rejectLocalTs, data: { tag: 'reject-local-source', voltage: 12.5 } });
+  seeded.push({ deviceKey: 'tx', timeSource: 'onenet', timestamp: rejectStringDataTs, data: 'reject-string-data' });
+  seeded.push({ deviceKey: 'tx', timeSource: 'onenet', timestamp: rejectArrayDataTs, data: ['reject-array-data'] });
+
+  const { api, storage } = loadWebModules(
+    { iot_onenet_config: JSON.stringify(LEGACY_CFG), iot_history_data: JSON.stringify(seeded) },
+    makePropertyFetch(fullTxItems(now), 1),
+    { nowMs: fakeNow }
+  );
+
+  const latest = await api.OneNetService.getLatestData('tx');
+  assert.equal(latest.voltage, 12.5);
+  assert.equal(latest.current, 1.25);
+  assert.equal(latest.freq, 100);
+  assert.equal(latest.state, 2);
+  assert.equal(latest._raw.V, 12.5, 'getLatestData 返回值仍应保留原始 _raw');
+  assert.equal(latest._propertyTimes.V, now - 1000, 'getLatestData 返回值仍应保留 _propertyTimes');
+  assert.equal(latest._propertyTimes.S, now - 4000);
+
+  const history = JSON.parse(storage.get('iot_history_data_tx'));
+  assert.ok(Array.isArray(history), '同分钟 duplicate 路径也必须写回新历史键');
+  assert.equal(history.length, 1440, 'duplicate=true 时规范化/截断后仍必须持久化为 1440 条');
+  assert.equal(history.some((item) => item.data && item.data.tag === 'legacy-1441'), false, '超过 1440 条时必须截断最旧条目');
+  assert.equal(history.some((item) => item.data && item.data.tag === 'same-minute-legacy'), true, 'V5 同分钟旧条目必须迁移并保留');
+  assert.equal(
+    history.some((item) => item.data && /^(reject-null|reject-bool|reject-empty|reject-array)$/.test(item.data.tag || '')),
+    false,
+    'null/boolean/空串/数组 timestamp 都不得进入新历史'
+  );
+  assert.equal(history.some((item) => item.timestamp === rejectZeroTs), false, 'timestamp=0 条目不得进入新历史');
+  assert.equal(history.some((item) => item.timestamp === rejectFutureTs), false, '超出 MAX_SOURCE_TIME 的未来时间不得进入新历史');
+  assert.equal(
+    history.some((item) => item.data && item.data.tag === 'reject-local-source'),
+    false,
+    'deviceKey=tx 且 timeSource=local 的条目不得进入新历史'
+  );
+  assert.equal(history.some((item) => item.timestamp === rejectStringDataTs), false, 'data 为字符串的条目不得进入新历史');
+  assert.equal(history.some((item) => item.timestamp === rejectArrayDataTs), false, 'data 为数组的条目不得进入新历史');
+
+  for (const item of history) {
+    assert.equal(item.deviceKey, 'tx', 'V5 fallback 迁移后必须补齐 deviceKey=tx');
+    assert.equal(item.timeSource, 'onenet', '历史 timeSource 必须严格收敛为 onenet');
+    assert.equal(typeof item.timestamp, 'number');
+    assert.ok(Number.isFinite(item.timestamp), '每条历史必须有严格数值时间戳');
+    assert.ok(item.timestamp > 0, '历史时间戳必须大于 0');
+    assert.ok(item.timestamp <= now, '历史时间戳不得晚于当前测试源时间');
+    assert.ok(item.data && typeof item.data === 'object' && !Array.isArray(item.data), '历史 data 必须为对象');
+    assert.equal(item.data.voltage, 12.5, '旧条目业务值必须保留');
+    assert.equal(item.data.current, 1.25);
+    assert.equal(item.data.freq, 100);
+    assert.equal(item.data.state, 2);
+    assert.equal(
+      Object.keys(item.data).some((k) => k.startsWith('_')),
+      false,
+      '历史 data 不得包含 _raw/_propertyTimes/_isOnline/_receivedAt 等下划线运行元数据'
+    );
+  }
+  assert.ok(history.some((item) => item.timeSource === 'onenet'),
+    '合法 V5 条目与本次完整实时快照都必须统一使用 OneNET 源时间');
+});
+
+test('R2/R3 RX 审计卡片优先最新未完成，无未完成时选最新已完成，排除 TX 与 null-baseline', async () => {
+  const now = Date.now();
+  const mk = (id, deviceKey, timestamp, command, auditBaseline, auditOutcome, auditResult) => ({
+    id,
+    deviceKey,
+    timestamp,
+    command,
+    requestedValue: null,
+    outcome: 'confirmed',
+    accepted: true,
+    confirmed: true,
+    deviceCode: 0,
+    message: '',
+    requestId: '',
+    auditBaseline,
+    auditOutcome,
+    auditSequence: auditOutcome === 'pending' ? null : auditBaseline + 1,
+    auditResult
+  });
+
+  /* 场景 1：较新 RX 已完成 + 较旧 RX 未完成 + TX/null-baseline 噪声 -> 必须显示未完成 */
+  const logs1 = [
+    mk('noise_tx_1', 'tx', now - 1000, 'OFF', 1, 'success', 'ok'),
+    mk('done_rx_1', 'rx', now - 2000, 'RATE=2500', 41, 'success', 'rate accepted'),
+    mk('noise_null_1', 'rx', now - 3000, 'STOP', null, null, ''),
+    mk('pend_rx_1', 'rx', now - 4000, 'START', 42, 'pending', '')
+  ];
+  const harness = buildControlDom();
+  loadControlPage(
+    harness,
+    { iot_onenet_devices_v1: DUAL_CONFIG, iot_operation_logs_v2: JSON.stringify(logs1) },
+    controlFetch({})
+  );
+  assert.equal(harness.els.rxAuditCommand.textContent, 'START', '未完成记录必须优先于更新的已完成记录');
+  assert.equal(harness.els.rxAuditResult.textContent, '等待');
+  assert.equal(harness.els.rxAuditSequence.textContent, '--');
+  await flushAsync();
+  assert.equal(harness.els.rxAuditCommand.textContent, 'START', '轮询后未完成记录仍应保持选中');
+  assert.equal(harness.els.rxAuditResult.textContent, '等待');
+
+  /* 场景 2：无未完成 -> 显示 timestamp 最新的已完成 RX 记录，TX 噪声排除 */
+  const logs2 = [
+    mk('noise_tx_2', 'tx', now - 1000, 'OFF', 1, 'success', 'ok'),
+    mk('older_done_2', 'rx', now - 3000, 'STOP', 40, 'success', 'stopped'),
+    mk('newer_done_2', 'rx', now - 2000, 'RATE=2500', 41, 'failed', 'ERROR rate 100')
+  ];
+  const harness2 = buildControlDom();
+  loadControlPage(
+    harness2,
+    { iot_onenet_devices_v1: DUAL_CONFIG, iot_operation_logs_v2: JSON.stringify(logs2) },
+    controlFetch({})
+  );
+  assert.equal(harness2.els.rxAuditCommand.textContent, 'RATE=2500', '无未完成时应显示最新已完成 RX 记录');
+  assert.equal(harness2.els.rxAuditResult.textContent, '失败 · ERROR rate 100');
+  await flushAsync();
+  assert.equal(harness2.els.rxAuditCommand.textContent, 'RATE=2500');
+  assert.equal(harness2.els.rxAuditResult.textContent, '失败 · ERROR rate 100');
 });

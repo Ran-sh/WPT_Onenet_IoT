@@ -54,7 +54,7 @@
                 <h1 class="text-base lg:text-xl font-bold tracking-tight">设置</h1>
             </div>
             <div class="flex items-center space-x-2 lg:space-x-4">
-                <span class="admin-badge"><i class="fas fa-user-shield text-sm"></i> 本地管理员</span>
+                <span class="admin-badge"><i class="fas fa-shield-halved text-sm"></i> Cloudflare Access</span>
                 <button id="logoutBtn" class="logout-btn" type="button">
                     <i class="fas fa-sign-out-alt"></i> 退出登录
                 </button>
@@ -162,7 +162,7 @@
 
             <section class="settings-section settings-note">
                 <h2>登录与安全说明</h2>
-                <p>当前本地登录仅阻止普通页面误入，不是服务器鉴权。公网部署应在 Cloudflare 中启用 Access；OneNET Token 只保存在可信设备本机浏览器，不显示、不记录、不导出。</p>
+                <p>访问由 Cloudflare Access 在边缘强制执行，本应用不再提供本地账号密码；退出登录将清除 Access 会话。OneNET Token 仍只保存在可信设备本机浏览器，不显示、不记录、不导出。</p>
             </section>
 
             <section class="settings-section">

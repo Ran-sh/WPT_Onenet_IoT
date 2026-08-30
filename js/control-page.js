@@ -40,12 +40,12 @@
     function txGateReason(perms) {
         if (pending.tx) return '命令执行中';
         if (!perms.configured) return '未配置云端连接，请前往设置';
-        if (!perms.live) return '实时数据不可用，仅 OFF 可用';
+        if (!perms.live) return '实时数据不可用，控制已禁用';
         if (perms.on) return '';
         var state = Number(lastSnapshot.tx.data && lastSnapshot.tx.data.state);
         if (state === 3) return '故障状态，仅 OFF 可用';
         if (state === 1 || state === 2) return '运行/扫频中，仅调频与 OFF 可用';
-        return '实时数据不可用，仅 OFF 可用';
+        return '实时数据不可用，控制已禁用';
     }
 
     function rxGateReason(perms) {
@@ -53,7 +53,10 @@
         if (!perms.configured) return '未配置云端连接，请前往设置';
         if (perms.start) return '';
         var reason = WptControlCore.getRxStartGateReason(lastSnapshot.rx.data);
-        return reason ? reason + '（仅安全命令可用）' : '实时数据不可用';
+        if (!reason) return '';
+        /* 实时数据可用但接收端安全门控未满足时，STOP/STATUS/RATE 仍可用；
+         * 实时数据不可用时全部控制禁用，不再出现"仅安全命令"误导。 */
+        return reason === '实时数据不可用' ? reason : reason + '（仅安全命令可用）';
     }
 
     function renderEndpoint(deviceKey, data, error) {
@@ -180,12 +183,25 @@
 
     /* ---------- RX 审计 ---------- */
 
+    /* RX 审计卡片选择：候选必须为 deviceKey==='rx' 且 auditBaseline!==null；未完成
+     * （auditOutcome 非 success/failed）优先，均按 Number(timestamp) 取最新；同时间戳保持原顺序。 */
+    function selectRxAuditEntry(logs) {
+        var pending = null;
+        var fallback = null;
+        for (var i = 0; i < logs.length; i++) {
+            var entry = logs[i];
+            if (!entry || entry.deviceKey !== 'rx' || entry.auditBaseline === null) continue;
+            if (entry.auditOutcome !== 'success' && entry.auditOutcome !== 'failed') {
+                if (!pending || Number(entry.timestamp) > Number(pending.timestamp)) pending = entry;
+            }
+            if (!fallback || Number(entry.timestamp) > Number(fallback.timestamp)) fallback = entry;
+        }
+        return pending || fallback;
+    }
+
     function renderAuditDisplay() {
         var logs = WptControlCore.readOperationLogs();
-        var entry = null;
-        for (var i = 0; i < logs.length; i++) {
-            if (logs[i].deviceKey === 'rx' && logs[i].auditBaseline !== null) { entry = logs[i]; break; }
-        }
+        var entry = selectRxAuditEntry(logs);
         setText('rxAuditSequence', entry && entry.auditSequence !== null ? String(entry.auditSequence) : '--');
         setText('rxAuditCommand', entry ? entry.command : '--');
         var auditText = '--';
@@ -198,15 +214,9 @@
     function updateRxAudit() {
         var data = lastSnapshot.rx.data;
         var logs = WptControlCore.readOperationLogs();
-        var target = null;
-        for (var i = 0; i < logs.length; i++) {
-            var entry = logs[i];
-            if (entry.deviceKey !== 'rx' || entry.auditBaseline === null) continue;
-            if (entry.auditOutcome === 'success' || entry.auditOutcome === 'failed') continue;
-            target = entry;
-            break;
-        }
-        if (target && typeof getReceiverCommandOutcome === 'function') {
+        var target = selectRxAuditEntry(logs);
+        if (target && target.auditOutcome !== 'success' && target.auditOutcome !== 'failed' &&
+            typeof getReceiverCommandOutcome === 'function') {
             var outcome = getReceiverCommandOutcome(data, target.auditBaseline, target.command);
             if (outcome.isNew && (outcome.outcome === 'success' || outcome.outcome === 'failed')) {
                 var resultText = data && data.rx_command_result ? String(data.rx_command_result) : '';

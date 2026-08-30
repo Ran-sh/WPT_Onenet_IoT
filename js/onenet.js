@@ -215,7 +215,7 @@ function clearOneNetDeviceConfig(deviceKey) {
     return true;
 }
 
-/* 清两端运行缓存/旧运行键/日志/报警，保留 TX/RX 凭据、登录状态与本机偏好。
+/* 清两端运行缓存/旧运行键/日志/报警，保留 TX/RX 凭据与本地偏好。
  * 三个 V2 运行键无条件整体删除：无 deviceKey、未知 deviceKey 或损坏 JSON 的记录
  * 不得残留；严禁 localStorage.clear() 或遍历删除未知键。 */
 function clearAllRuntimeData() {
@@ -268,6 +268,58 @@ function readDeviceHistory(deviceKey) {
         return Array.isArray(legacy) ? legacy : [];
     }
     return primary;
+}
+
+function compactHistoryData(rawData) {
+    var compacted = {};
+    if (!rawData || typeof rawData !== 'object' || Array.isArray(rawData)) return null;
+    Object.keys(rawData).forEach(function(fieldName) {
+        if (fieldName.charAt(0) === '_') return;
+        var value = rawData[fieldName];
+        if (typeof value === 'boolean' || typeof value === 'string' ||
+            (typeof value === 'number' && Number.isFinite(value))) compacted[fieldName] = value;
+    });
+    return compacted;
+}
+
+function normalizeHistoryTimestamp(rawTimestamp, now) {
+    var timestamp;
+    var validated;
+    if (typeof rawTimestamp === 'number') timestamp = rawTimestamp;
+    else if (typeof rawTimestamp === 'string' && rawTimestamp.trim() !== '') timestamp = Number(rawTimestamp);
+    else return null;
+    if (!Number.isFinite(timestamp)) return null;
+    validated = isValidSourceTime(timestamp);
+    if (validated === false) return null;
+    if (validated > now + MAX_FUTURE_MS) return null;
+    return validated;
+}
+
+/* 历史写入前统一清洗旧/新条目，仅保留 OneNET 源时间语义。 */
+function migrateDeviceHistory(deviceKey) {
+    var key = getDeviceKeyOrDefault(deviceKey);
+    var now = Date.now();
+    var history = readDeviceHistory(key);
+    if (!Array.isArray(history)) history = [];
+    if (history.length === 0) return [];
+    history = history.map(function(item) {
+        var isLegacyTx;
+        var normalizedKey;
+        var timeSource;
+        var timestamp;
+        var data;
+        if (!item || typeof item !== 'object') return null;
+        isLegacyTx = key === 'tx' && item.deviceKey === undefined && item.timeSource === undefined &&
+            (typeof item.time === 'string' || typeof item.fullTime === 'string');
+        normalizedKey = isLegacyTx ? 'tx' : item.deviceKey;
+        timeSource = isLegacyTx ? 'onenet' : item.timeSource;
+        timestamp = normalizeHistoryTimestamp(item.timestamp, now);
+        data = compactHistoryData(item.data);
+        if (normalizedKey !== key || timeSource !== 'onenet' ||
+            timestamp === null || data === null) return null;
+        return { deviceKey: normalizedKey, timestamp: timestamp, timeSource: timeSource, data: data };
+    }).filter(function(item) { return item !== null; }).slice(-1440);
+    return history;
 }
 
 /* ---------- 命令与参数校验 ---------- */
@@ -550,32 +602,84 @@ function byTimestamp(a, b) {
     return Number(a.timestamp) - Number(b.timestamp);
 }
 
-/* 纯函数：过滤无效项、按时间升序，对每个 TX 配对时间差最小且未使用、差值<=容差的 RX；
+/* 纯函数：过滤无效项并按时间升序，通过动态规划最大化配对数，再最小化总时间差；
  * 未配对项也保留；禁止按数组下标配对；不修改输入数组。 */
 function alignHistoriesByTimestamp(txHistory, rxHistory, toleranceMs) {
     var tolerance = Number.isFinite(Number(toleranceMs)) ? Number(toleranceMs) : 5000;
     var validTx = (Array.isArray(txHistory) ? txHistory : []).filter(isAlignableItem).map(cloneHistoryItem).sort(byTimestamp);
     var validRx = (Array.isArray(rxHistory) ? rxHistory : []).filter(isAlignableItem).map(cloneHistoryItem).sort(byTimestamp);
-    var usedRx = new Set();
+    var width = validRx.length + 1;
+    var cells = (validTx.length + 1) * width;
+    var pairCounts = new Int32Array(cells);
+    var costs = new Float64Array(cells);
+    var choices = new Uint8Array(cells);
+    var matchedTx = new Uint8Array(validTx.length);
+    var matchedRx = new Uint8Array(validRx.length);
     var rows = [];
-    validTx.forEach(function(txItem) {
-        var bestIndex = -1;
-        var bestDiff = Infinity;
-        validRx.forEach(function(rxItem, index) {
-            if (usedRx.has(index)) return;
-            var diff = Math.abs(Number(rxItem.timestamp) - Number(txItem.timestamp));
-            if (diff < bestDiff) { bestDiff = diff; bestIndex = index; }
-        });
-        if (bestIndex >= 0 && bestDiff <= tolerance) {
-            usedRx.add(bestIndex);
-            rows.push({ timestamp: Number(txItem.timestamp), tx: txItem, rx: validRx[bestIndex] });
-        } else {
-            rows.push({ timestamp: Number(txItem.timestamp), tx: txItem, rx: null });
+    var i;
+    var j;
+
+    if (tolerance < 0) tolerance = 0;
+    for (j = 1; j <= validRx.length; j++) choices[j] = 2;
+    for (i = 1; i <= validTx.length; i++) {
+        choices[i * width] = 1;
+        for (j = 1; j <= validRx.length; j++) {
+            var index = i * width + j;
+            var up = (i - 1) * width + j;
+            var left = i * width + j - 1;
+            var diagonal = (i - 1) * width + j - 1;
+            var bestCount = pairCounts[up];
+            var bestCost = costs[up];
+            var choice = 1;
+            var diff = Math.abs(Number(validTx[i - 1].timestamp) - Number(validRx[j - 1].timestamp));
+
+            if (pairCounts[left] > bestCount ||
+                (pairCounts[left] === bestCount && costs[left] < bestCost)) {
+                bestCount = pairCounts[left];
+                bestCost = costs[left];
+                choice = 2;
+            }
+            if (diff <= tolerance) {
+                var pairedCount = pairCounts[diagonal] + 1;
+                var pairedCost = costs[diagonal] + diff;
+                if (pairedCount > bestCount ||
+                    (pairedCount === bestCount && pairedCost < bestCost)) {
+                    bestCount = pairedCount;
+                    bestCost = pairedCost;
+                    choice = 3;
+                }
+            }
+            pairCounts[index] = bestCount;
+            costs[index] = bestCost;
+            choices[index] = choice;
         }
+    }
+
+    i = validTx.length;
+    j = validRx.length;
+    while (i > 0 || j > 0) {
+        var backtrackChoice = choices[i * width + j];
+        if (backtrackChoice === 3) {
+            matchedTx[i - 1] = 1;
+            matchedRx[j - 1] = 1;
+            rows.push({
+                timestamp: Number(validTx[i - 1].timestamp),
+                tx: validTx[i - 1],
+                rx: validRx[j - 1]
+            });
+            i--;
+            j--;
+        } else if (backtrackChoice === 1) {
+            i--;
+        } else {
+            j--;
+        }
+    }
+    validTx.forEach(function(txItem, index) {
+        if (matchedTx[index] === 0) rows.push({ timestamp: Number(txItem.timestamp), tx: txItem, rx: null });
     });
     validRx.forEach(function(rxItem, index) {
-        if (usedRx.has(index)) return;
-        rows.push({ timestamp: Number(rxItem.timestamp), tx: null, rx: rxItem });
+        if (matchedRx[index] === 0) rows.push({ timestamp: Number(rxItem.timestamp), tx: null, rx: rxItem });
     });
     rows.sort(byTimestamp);
     return rows;
@@ -677,6 +781,9 @@ class OneNetService {
             var cachedData = readLatestData(key);
             var controlLocks = readControlLocks(key);
             var lockNow = Date.now();
+            /* 历史快照：在乐观锁覆盖循环之前保存本次响应的原始值，历史记录云端原值而非被
+             * 乐观覆盖后的显示值；显示缓存仍使用下方覆盖后的 data。 */
+            var historySnapshot = Object.assign({}, data);
             for (var field in data) {
                 if (owns(data, field) && controlLocks[field] && (lockNow - controlLocks[field] < 3000)) {
                     data[field] = cachedData[field];
@@ -694,8 +801,10 @@ class OneNetService {
                         var st = statusResult.data.status;
                         var enableStatus = statusResult.data.enable_status;
                         /* 官方设备详情：status 为 int，仅数值 1=在线、2=未激活、0=离线；
-                         * 字符串与宽松相等一律不算在线，enable_status 明确为 false 也不算。 */
-                        isOnline = (typeof st === 'number' && st === 1 && enableStatus !== false);
+                         * 字符串与宽松相等一律不算在线，enable_status 明确禁用也不算。 */
+                        var enableStatusValid = enableStatus === undefined ||
+                            enableStatus === true || enableStatus === 1;
+                        isOnline = (typeof st === 'number' && st === 1 && enableStatusValid);
                     }
                 } catch (e) {}
             }
@@ -733,18 +842,22 @@ class OneNetService {
 
             /* 历史只在在线且新鲜且存在有效 OneNET 源时间时写入，按源时间所在分钟去重。 */
             if (isOnline && isFresh && telemetryTimestamp !== null) {
-                var history = readDeviceHistory(key);
-                if (!Array.isArray(history)) history = [];
+                var history = migrateDeviceHistory(key);
                 var minute = Math.floor(telemetryTimestamp / 60000);
                 var duplicate = history.some(function(item) {
                     return item && item.deviceKey === key && item.timeSource === 'onenet' &&
                         Number.isFinite(Number(item.timestamp)) && Math.floor(Number(item.timestamp) / 60000) === minute;
                 });
                 if (!duplicate) {
-                    history.push({ deviceKey: key, timestamp: telemetryTimestamp, timeSource: 'onenet', data: Object.assign({}, data) });
-                    if (history.length > 1440) history.shift();
-                    writeStorage(deviceStorageKey(key, 'iot_history_data'), history);
+                    history.push({
+                        deviceKey: key,
+                        timestamp: telemetryTimestamp,
+                        timeSource: 'onenet',
+                        data: compactHistoryData(historySnapshot)
+                    });
                 }
+                history = history.slice(-1440);
+                writeStorage(deviceStorageKey(key, 'iot_history_data'), history);
             }
             return data;
         } catch (error) {

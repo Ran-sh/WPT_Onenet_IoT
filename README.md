@@ -7,7 +7,7 @@
 [![CSS](https://img.shields.io/badge/CSS-Tailwind_3.4.17-06B6D4)]()
 [![Version](https://img.shields.io/badge/Version-V6.0.0-brightgreen)]()
 
-WPT 无线充电系统 V6.0.0 的响应式双端网页控制台，部署于 Cloudflare Workers 静态资源服务。页面通过 OneNET HTTP API 分别连接发射端与接收端物模型，提供 TX/RX 首页切换、实时监测、安全门控控制、云端历史、时间对齐、事件化告警、双设备配置和统一登录守卫。支持 PWA，可添加至手机主屏幕。
+WPT 无线充电系统 V6.0.0 的响应式双端网页控制台，部署于 Cloudflare Workers 静态资源服务。页面通过 OneNET HTTP API 分别连接发射端与接收端物模型，提供 TX/RX 首页切换、实时监测、安全门控控制、云端历史、时间对齐、事件化告警、双设备配置和 Cloudflare Access 访问边界。支持 PWA，可添加至手机主屏幕。
 
 V6.0.0 已在本地完成 `20260001`（TX）与 `RX_001`（RX）的独立配置、看板、控制、历史和告警实现，并通过契约测试及桌面/手机 Edge 模拟验收。真实 OneNET 上线部署、长期运行和危险控制仍须在功率关闭的受控环境逐项验收；HTTP 成功、MQTT 在线或 BLE 写入均不能替代设备实际执行确认。实施边界见 `docs/dual-device-roadmap.md`。
 
@@ -83,9 +83,9 @@ V6.0.0 已在本地完成 `20260001`（TX）与 `RX_001`（RX）的独立配置�
 
 ## 页面功能
 
-### 登录页 (`login.html`)
+### 访问说明页 (`login.html`)
 
-全屏登录表单。普通登录写入 `sessionStorage`，浏览器会话结束后失效；勾选保持登录时保存签发时间和失效时间，最长7天。连续失败5次会暂停30秒。6个业务页面在业务脚本前加载 `js/auth-guard.js`，未登录时自动跳转登录页并保留安全的站内回跳地址。
+展示 Cloudflare Access 的访问边界和退出入口，不处理账号、密码或本地会话。生产环境由 Access 在边缘拒绝未授权请求；6 个业务页面仍在业务脚本前加载兼容性的 `js/auth-guard.js`，该脚本不授权也不重定向。
 
 ### 仪表盘 (`index.html`)
 
@@ -123,15 +123,19 @@ V6.0.0 已在本地完成 `20260001`（TX）与 `RX_001`（RX）的独立配置�
 
 - **双端 OneNET 配置**：TX 与 RX 的 Product ID、Device Name 和 Token 分开保存、测试和清除；Token 不回填到表单。
 - **固定安全模型**：展示 TX/RX 属性摘要，不允许本地缓存改写 5A、20–200kHz、RX 类型与云端键等协议边界。
-- **本机数据**：可按端点清理运行缓存，也可清理全部运行数据；不会使用 `localStorage.clear()` 误删登录、凭据或其他站点偏好。
+- **本机数据**：可按端点清理运行缓存，也可清理全部运行数据；不会使用 `localStorage.clear()` 误删凭据或其他站点偏好。
 
 ---
 
-## 登录说明
+## 登录与访问说明
 
-当前默认账号为 `admin`，默认密码为 `admin123`。
+生产部署的访问边界由 Cloudflare Access 强制实施，本应用不包含任何本地账号、密码或前端鉴权逻辑。
 
-该账号只用于前端本地门控，哈希与验证程序都会随静态网页下发，不能抵御主动绕过，也不能视为真正的公网身份认证。正式部署必须在 Cloudflare 中启用 Access 或接入服务端账号体系。OneNET Token 应按设备隔离、设置有效期并定期轮换，不应在共享电脑上保存。
+- **当前线上配置**：站点运行在 Cloudflare Workers（workers.dev），Access 直接保护 Worker 或 workers.dev 域名；未通过 Access 的请求不会到达静态资源。
+- **策略要求**：仅配置显式 Allow 策略，不得配置 Bypass 规则；放行名单按邮箱或身份组维护并定期复核。
+- **会话与退出**：Access 会话由 Cloudflare 管理；设置页“退出登录”调用 `/cdn-cgi/access/logout` 清除当前 Access 会话。
+- **本地预览警告**：直接打开静态文件或本地开发服务器仅用于界面演示，不代表已通过身份验证，也不得用于控制生产设备。
+- OneNET Token 仍应按设备隔离、设置有效期并定期轮换，不应在共享电脑上保存。
 
 ---
 
@@ -190,7 +194,7 @@ TX SETFREQ 108kHz:
 1. 在 Workers & Pages 中关联 GitHub 仓库 `Ran-sh/WPT_Onenet_IoT`。
 2. 生产分支使用 `master`；`gh-pages` 保持为完全相同的发布镜像。
 3. 项目由 `wrangler.jsonc` 声明根目录静态资源和SPA回退，无需前端构建命令。
-4. 在 Cloudflare Zero Trust 中为 `wptonenet.483763727.workers.dev` 配置 Access 策略，避免仅依赖前端门控。
+4. 在 Cloudflare Zero Trust 中为 `wptonenet.483763727.workers.dev` 创建覆盖整个站点的 Access 应用，配置至少一个明确的 Allow 策略；不要用 Bypass 放行业务页面，也不要把前端页面当作认证边界。
 5. 部署完成后访问 `https://wptonenet.483763727.workers.dev/`，用无痕窗口验证登录、受保护页面、OneNET连接和V6.0.0版本元数据。
 
 ### Tailwind CSS 构建

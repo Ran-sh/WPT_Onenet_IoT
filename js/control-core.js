@@ -41,7 +41,9 @@ var WptControlCore = (function () {
         return Number.isInteger(r) && r >= 100 && r <= 5000;
     }
 
-    /* TX 权限：ON/SETFREQ 需实时快照；OFF 只要已配置；同端 pending 全部关闭。 */
+    /* TX 权限：ON/SETFREQ/OFF 全部要求实时快照；同端 pending 全部关闭。
+     * 本轮详情请求未确认在线或数据过期时不开放任何控制（含 OFF）；
+     * 固件侧 OFF 始终幂等接受的协议语义不受此 UI 门控影响。 */
     function getTxPermissions(context) {
         var c = context || {};
         var configured = hasConfig(c.config);
@@ -53,23 +55,25 @@ var WptControlCore = (function () {
             live: live,
             on: !pending && configured && live && state === 0,
             setfreq: !pending && configured && live && (state === 0 || state === 1 || state === 2),
-            off: !pending && configured
+            off: !pending && configured && live
         };
     }
 
-    /* RX 权限：START/ZERO 严格映射 isReceiverStartAllowed；STOP/STATUS/RATE 只要已配置。 */
+    /* RX 权限：START/ZERO 严格映射 isReceiverStartAllowed；
+     * STOP/STATUS/RATE 同样要求实时可用，离线/过期一律禁用。 */
     function getRxPermissions(context) {
         var c = context || {};
         var configured = hasConfig(c.config);
         var pending = c.pending === true;
+        var live = isLive(c.data, c.error);
         var startAllowed = typeof isReceiverStartAllowed === 'function' && isReceiverStartAllowed(c.data);
         return {
             configured: configured,
             start: !pending && configured && startAllowed,
             zero: !pending && configured && startAllowed,
-            stop: !pending && configured,
-            status: !pending && configured,
-            rate: !pending && configured
+            stop: !pending && configured && live,
+            status: !pending && configured && live,
+            rate: !pending && configured && live
         };
     }
 

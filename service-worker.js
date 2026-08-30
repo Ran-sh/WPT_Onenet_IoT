@@ -1,9 +1,7 @@
 /* WPT Monitor V6.0.0 Service Worker：同源资源网络优先，CDN资源缓存优先（外部仅保留 CDNJS 与 jsDelivr）。 */
-var CACHE = 'wpt-v6-0-0-web-14';
+var CACHE = 'wpt-v6-0-0-web-15';
 var BASE = self.location.pathname.replace(/\/[^/]*$/, '');
 var CORE_ASSETS = [
-  BASE + '/', BASE + '/login.html', BASE + '/index.html', BASE + '/monitoring.html',
-  BASE + '/control.html', BASE + '/history.html', BASE + '/alerts.html', BASE + '/settings.html',
   BASE + '/js/auth-guard.js', BASE + '/js/config.js', BASE + '/js/onenet.js', BASE + '/js/ui-common.js',
   BASE + '/js/control-core.js', BASE + '/js/control-page.js',
   BASE + '/js/index-page.js', BASE + '/js/monitoring-page.js', BASE + '/js/settings-page.js',
@@ -15,6 +13,8 @@ var CDN_HOSTS = ['cdnjs.cloudflare.com', 'cdn.jsdelivr.net'];
 
 function cacheResponse(request, response) {
   if (!response || !(response.ok || response.type === 'opaque')) return response;
+  /* 导航响应不写入缓存，避免离线回放受保护页面。 */
+  if (request.mode === 'navigate') return response;
   var copy = response.clone();
   caches.open(CACHE).then(function(cache) { return cache.put(request, copy); }).catch(function() {});
   return response;
@@ -24,14 +24,10 @@ function networkFirst(request) {
   return fetch(request).then(function(response) {
     return cacheResponse(request, response);
   }).catch(function() {
+    /* 导航失败直接返回错误，不读取缓存中的 HTML 兜底。 */
+    if (request.mode === 'navigate') return Response.error();
     return caches.match(request).then(function(cached) {
-      if (cached) return cached;
-      if (request.mode === 'navigate') {
-        return caches.match(BASE + '/login.html').then(function(login) {
-          return login || Response.error();
-        });
-      }
-      return Response.error();
+      return cached || Response.error();
     });
   });
 }

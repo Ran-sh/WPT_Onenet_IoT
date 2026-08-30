@@ -32,12 +32,21 @@ var WptUi = (function () {
     }
 
     function formatAge(ageMs) {
-        var age = Number(ageMs);
-        if (!Number.isFinite(age)) return '--';
-        if (age < 0) age = 0;
-        if (age < 1000) return '刚刚';
-        if (age < 60000) return Math.floor(age / 1000) + '秒前';
-        return Math.floor(age / 60000) + '分钟前';
+        var totalSeconds;
+        var days;
+        var hours;
+        var minutes;
+        var seconds;
+
+        /* 只接受 number 类型且有限的年龄，字符串数字不得隐式转换为有效值。 */
+        if (typeof ageMs !== 'number' || !Number.isFinite(ageMs)) return '--';
+        /* 有限负数按 0 处理；毫秒向下取整为总秒，禁止四舍五入。 */
+        totalSeconds = Math.floor(Math.max(0, ageMs) / 1000);
+        days = Math.floor(totalSeconds / 86400);
+        hours = Math.floor((totalSeconds % 86400) / 3600);
+        minutes = Math.floor((totalSeconds % 3600) / 60);
+        seconds = totalSeconds % 60;
+        return days + '天' + hours + '时' + minutes + '分' + seconds + '秒前';
     }
 
     /* 数值按小数位安全格式化；bool 显示明确文本；无效一律 '--'。 */
