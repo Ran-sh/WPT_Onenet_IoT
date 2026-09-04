@@ -5755,7 +5755,8 @@ test('R87 STOP 未获设备确认不得提前取代旧 RX 审计，确认后才�
     iot_operation_logs_v2: JSON.stringify(pendingLog)
   }, controlFetch({
     rxItems: () => rxGateOpenItems(now),
-    postImpl: async () => ({ ok: false, status: 500, json: async () => ({}) })
+    postImpl: async () => ({ ok: true, status: 200,
+      json: async () => ({ code: 0, data: { code: 500, msg: 'STOP rejected' } }) })
   }));
   await flushAsync();
   rejectedHarness.els.rxStopBtn.dispatch('click');

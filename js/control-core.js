@@ -5,6 +5,10 @@
  */
 var WptControlCore = (function () {
     var MAX_SEQUENCE = 2147483647;
+    var MIN_AUDIT_SOURCE_TIME = 946684800000;
+    var MAX_AUDIT_SOURCE_TIME = 4102444800000;
+    var LIVE_MAX_AGE_MS = 15000;
+    var LIVE_MAX_FUTURE_MS = 60000;
     var LOG_LIMIT = 100;
     var LOG_KEY = 'iot_operation_logs_v2';
     var OUTCOME_LABELS = {
@@ -22,8 +26,14 @@ var WptControlCore = (function () {
     }
 
     function isLive(data, error) {
-        return !error && !!data && typeof data === 'object' &&
-            data._isMock !== true && data._isOnline === true && data._isFresh === true;
+        var timestamp;
+        var age;
+        if (error || !data || typeof data !== 'object' || data._isMock === true ||
+            data._isOnline !== true || data._isFresh !== true) return false;
+        timestamp = Number(data._telemetryTimestamp);
+        if (!Number.isFinite(timestamp) || !Number.isInteger(timestamp)) return false;
+        age = Date.now() - timestamp;
+        return age >= -LIVE_MAX_FUTURE_MS && age <= LIVE_MAX_AGE_MS;
     }
 
     /* TX 频率：20.0<=f<100.0 每 0.1；100<=f<=200 每 1kHz。 */
@@ -41,39 +51,40 @@ var WptControlCore = (function () {
         return Number.isInteger(r) && r >= 100 && r <= 5000;
     }
 
-    /* TX 权限：ON/SETFREQ/OFF 全部要求实时快照；同端 pending 全部关闭。
-     * 本轮详情请求未确认在线或数据过期时不开放任何控制（含 OFF）；
-     * 固件侧 OFF 始终幂等接受的协议语义不受此 UI 门控影响。 */
+    /* TX 权限：危险方向要求实时且无普通事务；OFF只要求已配置，
+     * 即使详情失败或普通命令pending也必须保留失效安全通道。 */
     function getTxPermissions(context) {
         var c = context || {};
         var configured = hasConfig(c.config);
         var live = isLive(c.data, c.error);
         var pending = c.pending === true;
+        var safetyLatched = c.safetyLatched === true;
         var state = live ? Number(c.data.state) : NaN;
         return {
             configured: configured,
             live: live,
-            on: !pending && configured && live && state === 0,
-            setfreq: !pending && configured && live && (state === 0 || state === 1 || state === 2),
-            off: !pending && configured && live
+            on: !pending && !safetyLatched && configured && live && state === 0,
+            setfreq: !pending && !safetyLatched && configured && live && (state === 0 || state === 1 || state === 2),
+            off: configured
         };
     }
 
-    /* RX 权限：START/ZERO 严格映射 isReceiverStartAllowed；
-     * STOP/STATUS/RATE 同样要求实时可用，离线/过期一律禁用。 */
+    /* RX 权限：START/ZERO严格映射安全门控；STOP只要求已配置，
+     * STATUS/RATE仍要求实时且无普通事务。 */
     function getRxPermissions(context) {
         var c = context || {};
         var configured = hasConfig(c.config);
         var pending = c.pending === true;
+        var safetyLatched = c.safetyLatched === true;
         var live = isLive(c.data, c.error);
         var startAllowed = typeof isReceiverStartAllowed === 'function' && isReceiverStartAllowed(c.data);
         return {
             configured: configured,
-            start: !pending && configured && startAllowed,
-            zero: !pending && configured && startAllowed,
-            stop: !pending && configured && live,
+            start: !pending && !safetyLatched && configured && startAllowed,
+            zero: !pending && !safetyLatched && configured && startAllowed,
+            stop: configured,
             status: !pending && configured && live,
-            rate: !pending && configured && live
+            rate: !pending && !safetyLatched && configured && live
         };
     }
 
@@ -133,6 +144,12 @@ var WptControlCore = (function () {
         if (deviceCode !== null && !Number.isFinite(deviceCode)) deviceCode = null;
         var auditBaseline = raw.auditBaseline === null || raw.auditBaseline === undefined ? null : Number(raw.auditBaseline);
         if (auditBaseline !== null && (!Number.isInteger(auditBaseline) || auditBaseline < 0 || auditBaseline > MAX_SEQUENCE)) auditBaseline = null;
+        var auditSourceWatermark = raw.auditSourceWatermark === null || raw.auditSourceWatermark === undefined
+            ? null : Number(raw.auditSourceWatermark);
+        if (auditSourceWatermark !== null && (!Number.isInteger(auditSourceWatermark) ||
+            auditSourceWatermark < MIN_AUDIT_SOURCE_TIME || auditSourceWatermark > MAX_AUDIT_SOURCE_TIME)) {
+            auditSourceWatermark = null;
+        }
         var auditSequence = raw.auditSequence === null || raw.auditSequence === undefined ? null : Number(raw.auditSequence);
         if (auditSequence !== null && (!Number.isInteger(auditSequence) || auditSequence < 0 || auditSequence > MAX_SEQUENCE)) auditSequence = null;
         var auditOutcome = AUDIT_OUTCOMES.indexOf(raw.auditOutcome) !== -1 ? raw.auditOutcome : null;
@@ -149,6 +166,7 @@ var WptControlCore = (function () {
             message: sanitizeText(raw.message, 160),
             requestId: sanitizeText(raw.requestId, 128),
             auditBaseline: auditBaseline,
+            auditSourceWatermark: auditSourceWatermark,
             auditOutcome: auditOutcome,
             auditSequence: auditSequence,
             auditResult: sanitizeText(raw.auditResult, 160)
@@ -191,12 +209,12 @@ var WptControlCore = (function () {
         return writeOperationLogs(logs.slice(0, LOG_LIMIT));
     }
 
-    function updateOperationLog(id, patch) {
-        if (typeof id !== 'string' || !id) return false;
+    function updateOperationLog(deviceKey, id, patch) {
+        if ((deviceKey !== 'tx' && deviceKey !== 'rx') || typeof id !== 'string' || !id) return false;
         var logs = readOperationLogs();
         var found = false;
         logs = logs.map(function (entry) {
-            if (entry.id !== id) return entry;
+            if (entry.deviceKey !== deviceKey || entry.id !== id) return entry;
             found = true;
             var merged = Object.assign({}, entry);
             if (patch && typeof patch === 'object') {

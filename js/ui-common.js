@@ -77,17 +77,17 @@ var WptUi = (function () {
         return RX_STATE_MAP[state] || '未知';
     }
 
-    /* RX 故障位按 bit0→bit8 顺序，与 BoneStimMonitor FaultFlag enum 一致。 */
+    /* RX 故障位按 bit0→bit9 顺序，与 BoneStimMonitor FaultFlag enum 一致。 */
     var RX_FAULT_LABELS = [
         '硬件限流', 'ADC采样无效', '输出电压过低', '输出电压过高', '骨电压越界',
-        '过流', 'BLE断开', '控制保活超时', '遥测异常'
+        '过流', 'BLE断开', '控制保活超时', '遥测异常', '控制队列溢出'
     ];
 
-    /* 解码 RX 故障位：仅 number+finite+integer+0..511 有效；非法值显示 未知。 */
+    /* 解码 RX 故障位：仅 number+finite+integer+0..1023 有效；非法值显示 未知。 */
     function rxFaultText(value) {
         if (typeof value !== 'number' || !Number.isFinite(value)) return '未知';
         if (Math.floor(value) !== value) return '未知';
-        if (value < 0 || value > 511) return '未知';
+        if (value < 0 || value > 1023) return '未知';
         var hex = '0x' + value.toString(16).toUpperCase().padStart(4, '0');
         if (value === 0) return hex + ' · 无故障';
         var reasons = [];
@@ -163,6 +163,7 @@ var WptUi = (function () {
         var started = false;
         var inFlight = false;
         var timer = null;
+        var bfcachePaused = false;
 
         function clearTimer() {
             if (timer !== null) {
@@ -172,9 +173,9 @@ var WptUi = (function () {
         }
 
         function startTimer() {
-            clearTimer();
             if (!started) return;
             if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+            if (timer !== null) return;
             timer = setInterval(function () { safeRunNow(); }, intervalMs);
         }
 
@@ -196,12 +197,14 @@ var WptUi = (function () {
         function start() {
             if (started) return;
             started = true;
+            bfcachePaused = false;
             safeRunNow();
             startTimer();
         }
 
         function stop() {
             started = false;
+            bfcachePaused = false;
             clearTimer();
         }
 
@@ -211,16 +214,34 @@ var WptUi = (function () {
             if (document.visibilityState === 'hidden') {
                 clearTimer();
             } else {
+                if (bfcachePaused) return;
                 startTimer();
                 safeRunNow();
             }
+        }
+
+        function onPageHide(event) {
+            if (event && event.persisted === true && started) {
+                bfcachePaused = true;
+                clearTimer();
+                return;
+            }
+            stop();
+        }
+
+        function onPageShow(event) {
+            if (!event || event.persisted !== true || !started || !bfcachePaused) return;
+            bfcachePaused = false;
+            startTimer();
+            safeRunNow();
         }
 
         if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
             document.addEventListener('visibilitychange', onVisibility);
         }
         if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-            window.addEventListener('pagehide', stop);
+            window.addEventListener('pagehide', onPageHide);
+            window.addEventListener('pageshow', onPageShow);
             window.addEventListener('beforeunload', stop);
         }
 

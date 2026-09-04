@@ -1,10 +1,17 @@
 /**
  * WPT 双端控制台（V6.0.0）
- * 仅调用 OneNetService.sendProperty 与 WptControlCore；单次 POST、无重试、无乐观成功。
+ * 仅调用 OneNetService.sendProperty 与 WptControlCore；普通事务单次 POST、无乐观成功，
+ * 安全抢占只在旧危险请求晚到时补发一次幂等 OFF/STOP。
  */
 (function () {
     var POLL_MS = 5000;
+    var RX_AUDIT_TIMEOUT_MS = 15000;
     var pending = { tx: false, rx: false };
+    var pendingCommand = { tx: null, rx: null };
+    var commandGeneration = { tx: 0, rx: 0 };
+    var safetyStartedMs = { tx: 0, rx: 0 };
+    var safetySourceWatermark = { tx: null, rx: null };
+    var safetyPreemption = { tx: null, rx: null };
     var pendingConfirm = null;
     var previousFocus = null;
     var lastSnapshot = {
@@ -35,6 +42,36 @@
         return typeof getOneNetConfig === 'function' ? getOneNetConfig(deviceKey) : null;
     }
 
+    /* OFF/STOP 抢占普通请求时记录两个请求的代际与完成顺序。若旧危险请求最后完成，
+     * 只补发一次幂等安全命令；若原安全命令最后完成，则其本身已保证最终顺序。 */
+    function rememberSafetyPreemption(deviceKey, dangerGeneration, safetyGeneration) {
+        safetyPreemption[deviceKey] = {
+            dangerGeneration: dangerGeneration,
+            safetyGeneration: safetyGeneration,
+            dangerSettled: false,
+            safetySettled: false
+        };
+    }
+
+    function notePreemptedDangerSettled(deviceKey, generation) {
+        var state = safetyPreemption[deviceKey];
+        if (!state || state.dangerGeneration !== generation) return;
+        state.dangerSettled = true;
+        if (!state.safetySettled) return;
+        /* 先清记录再补偿，保证补偿命令自身无论成功或失败都不会递归重试。 */
+        safetyPreemption[deviceKey] = null;
+        if (deviceKey === 'tx') executeTx('off', null, '旧危险请求晚到，补发最终 OFF');
+        else executeRx('STOP', null, '旧危险请求晚到，补发最终 STOP');
+    }
+
+    function noteSafetySettled(deviceKey, generation) {
+        var state = safetyPreemption[deviceKey];
+        if (!state || state.safetyGeneration !== generation) return;
+        state.safetySettled = true;
+        /* 旧请求先完成、安全命令后完成时，已有安全的最终设备顺序，无需重复下发。 */
+        if (state.dangerSettled) safetyPreemption[deviceKey] = null;
+    }
+
     /* ---------- 渲染 ---------- */
 
     function txGateReason(perms) {
@@ -49,7 +86,7 @@
     }
 
     function rxGateReason(perms) {
-        if (pending.rx) return '命令执行中';
+        if (pending.rx || hasPendingRxAudit()) return '等待上一条接收端命令确认';
         if (!perms.configured) return '未配置云端连接，请前往设置';
         if (perms.start) return '';
         var reason = WptControlCore.getRxStartGateReason(lastSnapshot.rx.data);
@@ -74,7 +111,8 @@
             setText('txVoltageValue', live ? WptUi.formatMetric(data.voltage, 2, 'V') : '--');
             setText('txCurrentValue', live ? WptUi.formatMetric(data.current, 3, 'A') : '--');
             setText('txFrequencyValue', live ? WptUi.formatMetric(data.freq, 1, 'kHz') : '--');
-            var txPerms = WptControlCore.getTxPermissions({ config: config, data: data, error: error, pending: pending.tx });
+            var txPerms = WptControlCore.getTxPermissions({ config: config, data: data, error: error,
+                pending: pending.tx, safetyLatched: safetyStartedMs.tx !== 0 });
             setText('txGateReason', txGateReason(txPerms));
             setDisabled('txOnBtn', !txPerms.on);
             setDisabled('txOffBtn', !txPerms.off);
@@ -84,7 +122,8 @@
             setText('rxBleValue', live ? (data.rx_ble_online === true ? '正常' : '异常') : '--');
             setText('rxValidValue', live ? (data.rx_valid === true ? '有效' : '无效') : '--');
             setText('rxFaultValue', live ? String(data.rx_fault_flags) : '--');
-            var rxPerms = WptControlCore.getRxPermissions({ config: config, data: data, error: error, pending: pending.rx });
+            var rxPerms = WptControlCore.getRxPermissions({ config: config, data: data, error: error,
+                pending: pending.rx || hasPendingRxAudit(), safetyLatched: safetyStartedMs.rx !== 0 });
             setText('rxGateReason', rxGateReason(rxPerms));
             setDisabled('rxStartBtn', !rxPerms.start);
             setDisabled('rxZeroBtn', !rxPerms.zero);
@@ -118,6 +157,7 @@
             message: '',
             requestId: '',
             auditBaseline: null,
+            auditSourceWatermark: null,
             auditOutcome: null,
             auditSequence: null,
             auditResult: ''
@@ -199,6 +239,25 @@
         return pending || fallback;
     }
 
+    function hasPendingRxAudit() {
+        return WptControlCore.readOperationLogs().some(function(entry) {
+            return entry.deviceKey === 'rx' && entry.auditBaseline !== null &&
+                entry.auditOutcome === 'pending' &&
+                Date.now() - Number(entry.timestamp) < RX_AUDIT_TIMEOUT_MS;
+        });
+    }
+
+    function supersedePendingRxAudits(excludedId) {
+        WptControlCore.readOperationLogs().forEach(function(target) {
+            if (!target || target.deviceKey !== 'rx' || target.id === excludedId ||
+                target.auditOutcome !== 'pending') return;
+            WptControlCore.updateOperationLog('rx', target.id, {
+                auditOutcome: 'failed', auditSequence: null,
+                auditResult: '被安全 STOP 取代'
+            });
+        });
+    }
+
     function renderAuditDisplay() {
         var logs = WptControlCore.readOperationLogs();
         var entry = selectRxAuditEntry(logs);
@@ -217,13 +276,23 @@
         var target = selectRxAuditEntry(logs);
         if (target && target.auditOutcome !== 'success' && target.auditOutcome !== 'failed' &&
             typeof getReceiverCommandOutcome === 'function') {
-            var outcome = getReceiverCommandOutcome(data, target.auditBaseline, target.command);
+            var outcome = getReceiverCommandOutcome(
+                data, target.auditBaseline, target.command, target.auditSourceWatermark);
             if (outcome.isNew && (outcome.outcome === 'success' || outcome.outcome === 'failed')) {
                 var resultText = data && data.rx_command_result ? String(data.rx_command_result) : '';
-                WptControlCore.updateOperationLog(target.id, {
+                WptControlCore.updateOperationLog(target.deviceKey, target.id, {
                     auditOutcome: outcome.outcome,
                     auditSequence: outcome.sequence,
                     auditResult: resultText.slice(0, 160)
+                });
+                if (target.command === 'STOP' && outcome.outcome === 'success') {
+                    supersedePendingRxAudits(target.id);
+                }
+            } else if (Date.now() - Number(target.timestamp) >= RX_AUDIT_TIMEOUT_MS) {
+                WptControlCore.updateOperationLog(target.deviceKey, target.id, {
+                    auditOutcome: 'failed',
+                    auditSequence: null,
+                    auditResult: '接收端确认超时'
                 });
             }
         }
@@ -253,17 +322,21 @@
         return false;
     }
 
-    function executeTx(type, frequency) {
+    function executeTx(type, frequency, safetyReason) {
         var deviceKey = 'tx';
         var command = txCommandLabel(type, frequency);
         var requestedValue = type === 'on' ? true : (type === 'off' ? false : frequency);
+        var generation;
+        var preemptedGeneration = type === 'off' && pending.tx && pendingCommand.tx !== 'off'
+            ? commandGeneration.tx : 0;
         /* 最终门控：以最新快照/配置/pending 复核；失败只写 blocked，不调用网络。 */
         var config = currentConfig('tx');
         var perms = WptControlCore.getTxPermissions({
             config: config,
             data: lastSnapshot.tx.data,
             error: lastSnapshot.tx.error,
-            pending: pending.tx
+            pending: pending.tx,
+            safetyLatched: safetyStartedMs.tx !== 0
         });
         var allowed = type === 'on' ? perms.on : (type === 'off' ? perms.off : perms.setfreq);
         if (!allowed) {
@@ -279,9 +352,20 @@
             renderOperationLogs();
             return;
         }
+        commandGeneration.tx++;
+        generation = commandGeneration.tx;
+        if (preemptedGeneration !== 0) {
+            rememberSafetyPreemption('tx', preemptedGeneration, generation);
+        }
+        if (type === 'off') {
+            safetyStartedMs.tx = Date.now();
+            safetySourceWatermark.tx = currentSafetySourceTime('tx');
+        }
         pending.tx = true;
+        pendingCommand.tx = type;
         renderPermissions('tx');
         OneNetService.sendProperty(deviceKey, txParamsFor(type, frequency)).then(function (outcome) {
+            if (generation !== commandGeneration.tx) return;
             var cls = WptControlCore.classifyPropertyOutcome(outcome);
             appendLog(deviceKey, {
                 command: command,
@@ -290,30 +374,45 @@
                 accepted: !!outcome.accepted,
                 confirmed: !!outcome.confirmed,
                 deviceCode: outcome.deviceCode === undefined || outcome.deviceCode === null ? null : Number(outcome.deviceCode),
-                message: String(outcome.message || '').slice(0, 160),
+                message: String(safetyReason || outcome.message || '').slice(0, 160),
                 requestId: String(outcome.requestId || '').slice(0, 128)
             });
             setStatus(cls.label);
             renderOperationLogs();
         }).catch(function () {
-            appendLog(deviceKey, { command: command, requestedValue: requestedValue, outcome: 'transport_failed', message: '传输异常' });
+            if (generation !== commandGeneration.tx) return;
+            appendLog(deviceKey, { command: command, requestedValue: requestedValue,
+                outcome: 'transport_failed', message: String(safetyReason || '传输异常').slice(0, 160) });
             setStatus('传输失败');
             renderOperationLogs();
         }).finally(function () {
-            pending.tx = false;
-            renderPermissions('tx');
-            if (poller) poller.runNow();
+            if (generation === commandGeneration.tx) {
+                pending.tx = false;
+                pendingCommand.tx = null;
+                renderPermissions('tx');
+                if (poller) poller.runNow();
+            }
+            if (type === 'off') noteSafetySettled('tx', generation);
+            else notePreemptedDangerSettled('tx', generation);
         });
     }
 
     function dispatchTxCommand(type) {
-        if (pending.tx) return;
+        if (pending.tx && type !== 'off') return;
+        if (pending.tx && pendingCommand.tx === 'off') {
+            appendLog('tx', { command: 'OFF', requestedValue: false,
+                outcome: 'blocked', message: '安全 OFF 已在执行' });
+            setStatus('已拦截：安全 OFF 已在执行');
+            renderOperationLogs();
+            return;
+        }
         var config = currentConfig('tx');
         var perms = WptControlCore.getTxPermissions({
             config: config,
             data: lastSnapshot.tx.data,
             error: lastSnapshot.tx.error,
-            pending: pending.tx
+            pending: pending.tx,
+            safetyLatched: safetyStartedMs.tx !== 0
         });
         var allowed = type === 'on' ? perms.on : (type === 'off' ? perms.off : perms.setfreq);
         if (!allowed) {
@@ -363,6 +462,26 @@
         return seq;
     }
 
+    function rxAuditSourceWatermark() {
+        var data = lastSnapshot.rx.data;
+        var times = data && data._propertyTimes;
+        var sequenceTime = Number(times && times.RX_CommandSequence);
+        var watermark;
+        var keys;
+        var i;
+        var value;
+        if (!Number.isFinite(sequenceTime) || !Number.isInteger(sequenceTime)) return null;
+        watermark = sequenceTime;
+        keys = ['RX_Command', 'RX_CommandResult'];
+        for (i = 0; i < keys.length; i++) {
+            value = Number(times && times[keys[i]]);
+            if (Number.isFinite(value) && Number.isInteger(value) && value > watermark) {
+                watermark = value;
+            }
+        }
+        return watermark;
+    }
+
     function rxCommandType(command) {
         if (command === 'START') return 'start';
         if (command === 'STOP') return 'stop';
@@ -372,9 +491,14 @@
         return null;
     }
 
-    function executeRx(command, rate) {
+    function executeRx(command, rate, safetyReason) {
         var deviceKey = 'rx';
         var type = rxCommandType(command);
+        var generation;
+        var commandStartedMs;
+        var auditSourceWatermark;
+        var preemptedGeneration = type === 'stop' && pending.rx && pendingCommand.rx !== 'stop'
+            ? commandGeneration.rx : 0;
         if (!type) return;
         /* 最终门控：以最新快照/配置/pending 复核，失败只写 blocked，不调用网络。 */
         var config = currentConfig('rx');
@@ -382,7 +506,8 @@
             config: config,
             data: lastSnapshot.rx.data,
             error: lastSnapshot.rx.error,
-            pending: pending.rx
+            pending: pending.rx || hasPendingRxAudit(),
+            safetyLatched: safetyStartedMs.rx !== 0
         });
         var allowed = (type === 'start' || type === 'zero') ? perms.start
             : (type === 'rate' ? perms.rate : (type === 'stop' ? perms.stop : perms.status));
@@ -401,45 +526,92 @@
         }
         /* 最终门控通过后、POST 前读取审计基线；无合法序号为 null，不伪造。 */
         var baseline = rxAuditBaseline();
+        auditSourceWatermark = rxAuditSourceWatermark();
+        if (baseline === null && type !== 'stop') {
+            appendLog(deviceKey, { command: command, requestedValue: rate,
+                outcome: 'blocked', message: '缺少接收端命令序号，无法建立确认链' });
+            setStatus('已拦截：缺少接收端命令序号');
+            renderOperationLogs();
+            return;
+        }
+        if (auditSourceWatermark === null && type !== 'stop') {
+            appendLog(deviceKey, { command: command, requestedValue: rate,
+                outcome: 'blocked', message: '缺少接收端审计源时间，无法建立确认链' });
+            setStatus('已拦截：缺少接收端审计源时间');
+            renderOperationLogs();
+            return;
+        }
+        commandStartedMs = Date.now();
+        commandGeneration.rx++;
+        generation = commandGeneration.rx;
+        if (preemptedGeneration !== 0) {
+            rememberSafetyPreemption('rx', preemptedGeneration, generation);
+        }
+        if (type === 'stop') {
+            safetyStartedMs.rx = Date.now();
+            safetySourceWatermark.rx = currentSafetySourceTime('rx');
+        }
         pending.rx = true;
+        pendingCommand.rx = type;
         renderPermissions('rx');
         OneNetService.sendProperty(deviceKey, { command: command }).then(function (outcome) {
+            if (generation !== commandGeneration.rx) return;
             var cls = WptControlCore.classifyPropertyOutcome(outcome);
+            if (type === 'stop' && outcome.confirmed === true) supersedePendingRxAudits(null);
             appendLog(deviceKey, {
                 command: command,
+                timestamp: commandStartedMs,
                 requestedValue: rate,
                 outcome: cls.outcome,
                 accepted: !!outcome.accepted,
                 confirmed: !!outcome.confirmed,
                 deviceCode: outcome.deviceCode === undefined || outcome.deviceCode === null ? null : Number(outcome.deviceCode),
-                message: String(outcome.message || '').slice(0, 160),
+                message: String(safetyReason || outcome.message || '').slice(0, 160),
                 requestId: String(outcome.requestId || '').slice(0, 128),
                 auditBaseline: baseline,
-                auditOutcome: null,
+                auditSourceWatermark: auditSourceWatermark,
+                auditOutcome: baseline !== null && auditSourceWatermark !== null &&
+                    outcome.accepted === true && outcome.confirmed !== true &&
+                    (outcome.deviceCode === null || outcome.deviceCode === undefined) ? 'pending' : null,
                 auditSequence: null,
                 auditResult: ''
             });
             setStatus(cls.label);
             renderOperationLogs();
         }).catch(function () {
-            appendLog(deviceKey, { command: command, requestedValue: rate, outcome: 'transport_failed', message: '传输异常', auditBaseline: baseline });
+            if (generation !== commandGeneration.rx) return;
+            appendLog(deviceKey, { command: command, timestamp: commandStartedMs,
+                requestedValue: rate, outcome: 'transport_failed',
+                message: String(safetyReason || '传输异常').slice(0, 160), auditBaseline: baseline });
             setStatus('传输失败');
             renderOperationLogs();
         }).finally(function () {
-            pending.rx = false;
-            renderPermissions('rx');
-            if (poller) poller.runNow();
+            if (generation === commandGeneration.rx) {
+                pending.rx = false;
+                pendingCommand.rx = null;
+                renderPermissions('rx');
+                if (poller) poller.runNow();
+            }
+            if (type === 'stop') noteSafetySettled('rx', generation);
+            else notePreemptedDangerSettled('rx', generation);
         });
     }
 
     function dispatchRxCommand(type) {
-        if (pending.rx) return;
+        if (pending.rx && type !== 'stop') return;
+        if (pending.rx && pendingCommand.rx === 'stop') {
+            appendLog('rx', { command: 'STOP', outcome: 'blocked', message: '安全 STOP 已在执行' });
+            setStatus('已拦截：安全 STOP 已在执行');
+            renderOperationLogs();
+            return;
+        }
         var config = currentConfig('rx');
         var perms = WptControlCore.getRxPermissions({
             config: config,
             data: lastSnapshot.rx.data,
             error: lastSnapshot.rx.error,
-            pending: pending.rx
+            pending: pending.rx || hasPendingRxAudit(),
+            safetyLatched: safetyStartedMs.rx !== 0
         });
         var allowed = type === 'start' ? perms.start : (type === 'zero' ? perms.zero : (type === 'rate' ? perms.rate : (type === 'stop' ? perms.stop : perms.status)));
         var command = rxCommandValue(type);
@@ -473,6 +645,40 @@
 
     /* ---------- 轮询与生命周期 ---------- */
 
+    function currentSafetySourceTime(deviceKey) {
+        var data = lastSnapshot[deviceKey].data;
+        var cloudKey = deviceKey === 'tx' ? 'S' : 'RX_Stim';
+        var sourceTime = Number(data && data._propertyTimes && data._propertyTimes[cloudKey]);
+        return Number.isFinite(sourceTime) && Number.isInteger(sourceTime) ? sourceTime : null;
+    }
+
+    function clearConfirmedSafetyLatch(deviceKey, data) {
+        var sourceTime;
+        var watermark;
+
+        if (!data || data._isOnline !== true || data._isFresh !== true ||
+            safetyPreemption[deviceKey] !== null ||
+            safetyStartedMs[deviceKey] === 0) return;
+        if (deviceKey === 'tx') {
+            sourceTime = Number(data._propertyTimes && data._propertyTimes.S);
+            watermark = safetySourceWatermark.tx;
+            if (Number.isFinite(sourceTime) && Number.isInteger(sourceTime) &&
+                (watermark === null || sourceTime > watermark) &&
+                (Number(data.state) === 0 || Number(data.state) === 3)) {
+                safetyStartedMs.tx = 0;
+                safetySourceWatermark.tx = null;
+            }
+            return;
+        }
+        sourceTime = Number(data._propertyTimes && data._propertyTimes.RX_Stim);
+        watermark = safetySourceWatermark.rx;
+        if (Number.isFinite(sourceTime) && Number.isInteger(sourceTime) &&
+            (watermark === null || sourceTime > watermark) && data.rx_stim === false) {
+            safetyStartedMs.rx = 0;
+            safetySourceWatermark.rx = null;
+        }
+    }
+
     async function syncAll() {
         var settled = await Promise.allSettled([
             OneNetService.getLatestData('tx'),
@@ -484,6 +690,7 @@
                 data: result.status === 'fulfilled' ? result.value : null,
                 error: result.status === 'rejected' ? result.reason : null
             };
+            clearConfirmedSafetyLatch(deviceKey, lastSnapshot[deviceKey].data);
             renderEndpoint(deviceKey, lastSnapshot[deviceKey].data, lastSnapshot[deviceKey].error);
         });
         updateRxAudit();

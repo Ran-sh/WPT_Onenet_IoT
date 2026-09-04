@@ -195,7 +195,9 @@ var WptAlertEngine = (function () {
         });
         Object.keys(states).forEach(function (key) {
             var state = states[key];
-            if (state.activeIncidentId && !normalized.some(function (inc) { return inc.id === state.activeIncidentId; })) {
+            if (state.activeIncidentId && !normalized.some(function (inc) {
+                return inc.id === state.activeIncidentId && inc.active;
+            })) {
                 states[key] = Object.assign({}, state, { activeIncidentId: null });
             }
         });
@@ -275,7 +277,10 @@ var WptAlertEngine = (function () {
             var activeIncident = null;
             if (state.activeIncidentId) {
                 for (var i = 0; i < incidents.length; i++) {
-                    if (incidents[i].id === state.activeIncidentId) { activeIncident = incidents[i]; break; }
+                    if (incidents[i].id === state.activeIncidentId && incidents[i].active) {
+                        activeIncident = incidents[i];
+                        break;
+                    }
                 }
             }
             if (state.lastSourceTime !== null && sourceTime < state.lastSourceTime) return;

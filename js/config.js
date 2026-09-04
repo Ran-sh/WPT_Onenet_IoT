@@ -47,7 +47,7 @@ const DEFAULT_DEVICE_MODELS = {
             { id: 'rx_stim', name: '刺激中', icon: 'fa-bolt', color: 'yellow', unit: '', cloudKey: 'RX_Stim', dataType: 'bool', step: 1 },
             { id: 'rx_connected', name: 'BLE连接', icon: 'fa-link', color: 'green', unit: '', cloudKey: 'RX_Connected', dataType: 'bool', step: 1 },
             { id: 'rx_valid', name: '数据有效', icon: 'fa-check', color: 'green', unit: '', cloudKey: 'RX_Valid', dataType: 'bool', step: 1 },
-            { id: 'rx_fault_flags', name: '故障标志', icon: 'fa-exclamation-triangle', color: 'red', unit: '', cloudKey: 'RX_FaultFlags', dataType: 'int32', min: 0, max: 511, step: 1 },
+            { id: 'rx_fault_flags', name: '故障标志', icon: 'fa-exclamation-triangle', color: 'red', unit: '', cloudKey: 'RX_FaultFlags', dataType: 'int32', min: 0, max: 1023, step: 1 },
             { id: 'rx_fault_reason', name: '故障说明', icon: 'fa-comment', color: 'red', unit: '', cloudKey: 'RX_FaultReason', dataType: 'string', step: 1 },
             { id: 'rx_state', name: '接收状态', icon: 'fa-microchip', color: 'slate', unit: '', cloudKey: 'RX_State', dataType: 'int32', min: 0, max: 5, step: 1 },
             { id: 'rx_ble_online', name: 'BLE在线', icon: 'fa-bluetooth', color: 'blue', unit: '', cloudKey: 'RX_BleOnline', dataType: 'bool', step: 1 },
@@ -223,10 +223,36 @@ function normalizeGroup(savedItems, defaults) {
 
 function normalizeDataModel(model) {
     const source = model && typeof model === 'object' ? model : {};
+    const defaultSensorIds = new Set(DEFAULT_DATA_MODEL.sensors.map(function (item) { return item.id; }));
+    const defaultControlIds = new Set(DEFAULT_DATA_MODEL.controls.map(function (item) { return item.id; }));
+    const fixedCloudKeys = new Set(DEFAULT_DATA_MODEL.sensors.concat(DEFAULT_DATA_MODEL.controls)
+        .map(function (item) { return item.cloudKey; }));
+    let sensors = normalizeGroup(source.sensors, DEFAULT_DATA_MODEL.sensors);
+    let controls = normalizeGroup(source.controls, DEFAULT_DATA_MODEL.controls);
+
+    /* 跨组 ID 必须唯一：固定协议项优先，附加项冲突时保留只读 sensor。
+     * 否则同 ID sensor 可把控制命令重映射到任意 cloudKey。 */
+    sensors = sensors.filter(function (item) { return !defaultControlIds.has(item.id); });
+    controls = controls.filter(function (item) { return !defaultSensorIds.has(item.id); });
+    const sensorIds = new Set(sensors.map(function (item) { return item.id; }));
+    controls = controls.filter(function (item) { return !sensorIds.has(item.id); });
+    const seenCloudKeys = new Set();
+    sensors = sensors.filter(function (item) {
+        if (defaultSensorIds.has(item.id)) { seenCloudKeys.add(item.cloudKey); return true; }
+        if (fixedCloudKeys.has(item.cloudKey) || seenCloudKeys.has(item.cloudKey)) return false;
+        seenCloudKeys.add(item.cloudKey);
+        return true;
+    });
+    controls = controls.filter(function (item) {
+        if (defaultControlIds.has(item.id)) { seenCloudKeys.add(item.cloudKey); return true; }
+        if (fixedCloudKeys.has(item.cloudKey) || seenCloudKeys.has(item.cloudKey)) return false;
+        seenCloudKeys.add(item.cloudKey);
+        return true;
+    });
     return {
         version: DATA_MODEL_VERSION,
-        sensors: normalizeGroup(source.sensors, DEFAULT_DATA_MODEL.sensors),
-        controls: normalizeGroup(source.controls, DEFAULT_DATA_MODEL.controls)
+        sensors: sensors,
+        controls: controls
     };
 }
 

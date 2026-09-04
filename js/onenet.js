@@ -34,9 +34,15 @@ var TELEMETRY_FRESH_MS = 15000;
 var MAX_FUTURE_MS = 60000;
 var MIN_SOURCE_TIME = 946684800000;
 var MAX_SOURCE_TIME = 4102444800000;
+var TX_CURRENT_TELEMETRY_MIN_A = 0;
+var TX_CURRENT_TELEMETRY_MAX_A = 10;
 var TX_TELEMETRY_CLOUD_KEYS = ['V', 'I', 'F', 'S'];
 var RX_TELEMETRY_CLOUD_KEYS = ['RX_IMon', 'RX_Current_uA', 'RX_BoneP', 'RX_BoneN', 'RX_BoneV', 'RX_Resistance', 'RX_Vout', 'RX_Limit', 'RX_Stim', 'RX_Connected', 'RX_Valid', 'RX_FaultFlags'];
 var RX_TELEMETRY_FRESH_KEY = 'RX_TelemetryFresh';
+var RX_START_GATE_CLOUD_KEYS = [
+    'RX_BleOnline', 'RX_Connected', 'RX_Valid', 'RX_Safe', 'RX_State',
+    'RX_Limit', 'RX_Stim', 'RX_FaultFlags', RX_TELEMETRY_FRESH_KEY
+];
 
 /* ---------- 双设备 OneNET 配置 ---------- */
 
@@ -337,7 +343,7 @@ function isValidReceiverCommand(command) {
 
 function validateControlParams(model, params, deviceKey) {
     var keys = Object.keys(params || {});
-    if (keys.length === 0) return false;
+    if (keys.length !== 1) return false;
     var key = normalizeDeviceKey(deviceKey) || 'tx';
     return keys.every(function(k) {
         var control = model.controls.find(function(item) { return item.id === k; });
@@ -429,9 +435,18 @@ function isValidSourceTime(time) {
     return t;
 }
 
-function isValueInRange(definition, value) {
-    var min = Number(definition.min);
-    var max = Number(definition.max);
+function isTelemetryValueInRange(definition, value, deviceKey) {
+    var min = Number(definition.telemetryMin);
+    var max = Number(definition.telemetryMax);
+    /* 5A 是安全/告警边界，不是 CC6920-10A 入站数据的可表示上限。
+     * 保留固定模型 max=5，避免 UI 与告警边界被解析容差反向放宽。 */
+    if (deviceKey === 'tx' && definition.id === 'current') {
+        min = TX_CURRENT_TELEMETRY_MIN_A;
+        max = TX_CURRENT_TELEMETRY_MAX_A;
+    } else {
+        if (!Number.isFinite(min)) min = Number(definition.min);
+        if (!Number.isFinite(max)) max = Number(definition.max);
+    }
     if (Number.isFinite(min) && value < min) return false;
     if (Number.isFinite(max) && value > max) return false;
     return true;
@@ -488,7 +503,7 @@ function parsePropertyResponse(resultData, model, deviceKey) {
                 var rawFreq = Number(item.value);
                 if (!Number.isInteger(rawFreq) || !(rawFreq === 0 || (rawFreq >= 20000 && rawFreq <= 200000))) return;
             } else {
-                if (!isValueInRange(definition, normalized)) return;
+                if (!isTelemetryValueInRange(definition, normalized, deviceKey)) return;
                 if (!isStepValid(definition, normalized)) return;
             }
         }
@@ -531,10 +546,25 @@ function parsePropertyResponse(resultData, model, deviceKey) {
 
 /* ---------- RX 安全门控与命令审计 ---------- */
 
-/* START 前置条件：在线、新鲜、BLE/连接/有效/安全全 true、READY、无限流/刺激、无故障。 */
+/* START/ZERO 前置条件：每次判断都以当前时刻复核全部门控属性源时间，
+ * 防止确认框停留期间把已过期的旧快照继续用于危险控制。 */
 function isReceiverStartAllowed(data) {
+    var now;
+    var index;
+    var sourceTime;
+    var age;
+
     if (!data || typeof data !== 'object') return false;
     if (data._isOnline !== true || data._isFresh !== true) return false;
+    if (data.rx_telemetry_fresh !== true) return false;
+    now = Date.now();
+    for (index = 0; index < RX_START_GATE_CLOUD_KEYS.length; index++) {
+        sourceTime = data._propertyTimes && data._propertyTimes[RX_START_GATE_CLOUD_KEYS[index]];
+        if (typeof sourceTime !== 'number' || !Number.isFinite(sourceTime) ||
+            sourceTime < MIN_SOURCE_TIME || sourceTime > MAX_SOURCE_TIME) return false;
+        age = now - sourceTime;
+        if (age < -MAX_FUTURE_MS || age > TELEMETRY_FRESH_MS) return false;
+    }
     if (data.rx_ble_online !== true || data.rx_connected !== true || data.rx_valid !== true || data.rx_safe !== true) return false;
     if (data.rx_state !== 2) return false;
     if (data.rx_limit !== false || data.rx_stim !== false) return false;
@@ -545,8 +575,9 @@ var RX_MAX_AUDIT_SEQUENCE = 2147483647;
 
 /* 命令审计终态：baseline/current 必须是 0..2147483647 的整数且命令整帧相等；
  * 新审计条件为 current>baseline，或 baseline=max 且 current=1（固件回绕）。
+ * 三个审计属性源时间必须都严格越过 POST 前的远端源时间水位，禁止与浏览器墙钟比较。
  * 先按命令匹配真实成功/失败文本，再按通用失败/兜底 success|accepted 分类，其余 pending。 */
-function getReceiverCommandOutcome(data, baselineSequence, command) {
+function getReceiverCommandOutcome(data, baselineSequence, command, sourceWatermark) {
     var empty = { isNew: false, outcome: 'pending', sequence: null };
     if (!data || typeof data !== 'object') return empty;
     var baseline = Number(baselineSequence);
@@ -556,29 +587,40 @@ function getReceiverCommandOutcome(data, baselineSequence, command) {
     var isNew = sequence > baseline || (baseline === RX_MAX_AUDIT_SEQUENCE && sequence === 1);
     if (!isNew) return empty;
     if (data.rx_command !== command) return empty;
+    var watermark = Number(sourceWatermark);
+    if (!Number.isFinite(watermark) || !Number.isInteger(watermark) ||
+        watermark < MIN_SOURCE_TIME || watermark > MAX_SOURCE_TIME) return empty;
+    var auditTimes = ['RX_Command', 'RX_CommandResult', 'RX_CommandSequence'].map(function(key) {
+        return Number(data._propertyTimes && data._propertyTimes[key]);
+    });
+    if (auditTimes.some(function(time) {
+        return !Number.isFinite(time) || !Number.isInteger(time) || time <= watermark;
+    }) || Math.max.apply(null, auditTimes) - Math.min.apply(null, auditTimes) > 5000) return empty;
     /* 文本映射只按命令类型：完整 RATE=<整数> 归为 RATE，其余按原命令；
      * data.rx_command 与 command 的整帧相等校验不放宽。 */
     var commandType = /^RATE=\d+$/.test(command) ? 'RATE' : command;
-    var resultText = String(data.rx_command_result || '').toLowerCase();
+    var resultText = String(data.rx_command_result || '').trim().toLowerCase();
     var outcome = 'pending';
-    var failureTexts = {
-        START: 'start rejected',
-        STOP: 'fault remains',
-        STATUS: '',
-        ZERO: 'zero rejected',
-        RATE: 'error rate'
+    function terminalPattern(message) {
+        return new RegExp('^(?:' + message + '|[a-z_]+:' + message + ':f=[0-9a-f]{4})$');
+    }
+    var successPattern = {
+        START: terminalPattern('start accepted'),
+        STOP: terminalPattern('stopped; fault cleared'),
+        STATUS: terminalPattern('requested'),
+        ZERO: terminalPattern('software zero recorded'),
+        RATE: terminalPattern('rate accepted')
     };
-    var successTexts = {
-        START: 'start accepted',
-        STOP: 'stopped; fault cleared',
-        STATUS: ':requested:',
-        ZERO: 'software zero recorded',
-        RATE: 'rate accepted'
+    var failurePattern = {
+        START: terminalPattern('start rejected'),
+        STOP: terminalPattern('fault remains'),
+        ZERO: terminalPattern('zero rejected'),
+        RATE: terminalPattern('error rate 100\\.\\.5000')
     };
-    if ((failureTexts[commandType] && resultText.indexOf(failureTexts[commandType]) !== -1) ||
-        /receiver timeout|ble disconnected|rejected by receiver/.test(resultText)) {
+    if ((failurePattern[commandType] && failurePattern[commandType].test(resultText)) ||
+        /^(receiver timeout|ble disconnected|rejected by receiver)$/.test(resultText)) {
         outcome = 'failed';
-    } else if (successTexts[commandType] && resultText.indexOf(successTexts[commandType]) !== -1) {
+    } else if (successPattern[commandType] && successPattern[commandType].test(resultText)) {
         outcome = 'success';
     } else if (resultText === 'success') {
         outcome = 'success';
@@ -907,7 +949,6 @@ class OneNetService {
         }
         var reverseMap = {};
         model.controls.forEach(function(c) { reverseMap[c.id] = c.cloudKey; });
-        model.sensors.forEach(function(s) { reverseMap[s.id] = s.cloudKey; });
         var mappedParams = {};
         for (var k in params) {
             if (!owns(params, k)) continue;
@@ -1019,7 +1060,7 @@ class OneNetService {
             } else {
                 var normalized = normalizeCloudValue(definition, item.value);
                 if (normalized === undefined) return;
-                if (!isValueInRange(definition, normalized)) return;
+                if (!isTelemetryValueInRange(definition, normalized, key)) return;
                 if (!isStepValid(definition, normalized)) return;
                 value = normalized;
             }
