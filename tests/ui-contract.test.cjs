@@ -6239,3 +6239,43 @@ test('R97 损坏的独立安全状态在刷新时 fail-closed 且只保留关断
   assert.equal(harness.els.rxRateBtn.disabled, true);
   assert.equal(harness.els.rxStopBtn.disabled, false);
 });
+
+test('R98 无旧源时间的离线 OFF 确认后可由首个新鲜安全遥测解除锁存', async () => {
+  const now = Date.now();
+  let phase = 'offline';
+  let offPosts = 0;
+  const fetchImpl = async (url, options) => {
+    if (options && options.method === 'POST') {
+      const body = JSON.parse(options.body);
+      if (body.params.Switch === false) {
+        offPosts++;
+        phase = 'online';
+      }
+      return { ok: true, status: 200,
+        json: async () => ({ code: 0, request_id: 'offline-off', data: { code: 0, msg: 'off' } }) };
+    }
+    if (url.includes('/device/detail')) {
+      return { ok: true, status: 200,
+        json: async () => ({ code: 0, data: { status: phase === 'online' ? 1 : 0 } }) };
+    }
+    return { ok: true, status: 200,
+      json: async () => ({ code: 0, data: fullTxItems(now).map((item) =>
+        item.identifier === 'S' ? { ...item, value: 0, time: now } : item) }) };
+  };
+  const harness = buildControlDom();
+  loadControlPage(harness, {
+    iot_onenet_config: JSON.stringify(LEGACY_CFG),
+    iot_control_safety_v1: JSON.stringify({
+      version: 1, tx: { latched: true }, rx: { latched: false }
+    })
+  }, fetchImpl);
+  await flushAsync();
+  assert.equal(harness.els.txOnBtn.disabled, true);
+  assert.equal(harness.els.txOffBtn.disabled, false);
+  harness.els.txOffBtn.dispatch('click');
+  for (let i = 0; i < 10; i++) await flushAsync();
+  assert.equal(offPosts, 1);
+  assert.equal(harness.els.txStateValue.textContent, '待机');
+  assert.equal(harness.els.txOnBtn.disabled, false,
+    '确认 OFF 后首个在线新鲜安全源时间应解除离线恢复锁');
+});
