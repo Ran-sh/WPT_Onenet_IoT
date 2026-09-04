@@ -6259,8 +6259,10 @@ test('R98 无旧源时间的离线 OFF 确认后可由首个新鲜安全遥测�
         json: async () => ({ code: 0, data: { status: phase === 'online' ? 1 : 0 } }) };
     }
     return { ok: true, status: 200,
-      json: async () => ({ code: 0, data: fullTxItems(now).map((item) =>
-        item.identifier === 'S' ? { ...item, value: 0, time: now } : item) }) };
+      json: async () => ({ code: 0, data: phase === 'online'
+        ? fullTxItems(now).map((item) => item.identifier === 'S'
+          ? { ...item, value: 0, time: now } : item)
+        : [] }) };
   };
   const harness = buildControlDom();
   loadControlPage(harness, {
