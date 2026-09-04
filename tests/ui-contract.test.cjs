@@ -6143,3 +6143,99 @@ test('R94 补偿失败时新源时间安全遥测仍不能解除危险锁', asyn
   assert.equal(harness.els.txOnBtn.disabled, true,
     'OFF/最终补偿失败后，单凭更新的安全遥测不得解除危险锁');
 });
+
+test('R95 accepted-only 危险锁跨页面刷新保留且不依赖操作日志', async () => {
+  const now = Date.now();
+  const durable = new Map([
+    ['iot_onenet_devices_v1', DUAL_CONFIG]
+  ]);
+  const localStorage = {
+    getItem: (key) => durable.has(key) ? durable.get(key) : null,
+    setItem: (key, value) => durable.set(key, String(value)),
+    removeItem: (key) => durable.delete(key)
+  };
+  let startPosts = 0;
+  const fetchImpl = controlFetch({
+    rxItems: () => rxGateOpenItems(now),
+    postImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      if (body.params.RX_Command === 'START') startPosts++;
+      return { ok: true, status: 200,
+        json: async () => ({ code: 0, request_id: 'refresh-start', msg: 'queued', data: {} }) };
+    }
+  });
+  const first = buildControlDom();
+  loadControlPage(first, {}, fetchImpl, { localStorage });
+  await flushAsync();
+  first.els.rxStartBtn.dispatch('click');
+  first.els.controlConfirmConfirm.dispatch('click');
+  for (let i = 0; i < 5; i++) await flushAsync();
+  assert.equal(startPosts, 1);
+  assert.ok(durable.has('iot_control_safety_v1'),
+    '危险 POST 前必须把独立安全锁持久化');
+
+  durable.set('iot_operation_logs_v2', '[]');
+  const second = buildControlDom();
+  loadControlPage(second, {}, fetchImpl, { localStorage });
+  await flushAsync();
+  assert.equal(second.els.rxStartBtn.disabled, true,
+    '刷新且清空展示日志后仍必须恢复 accepted-only 危险锁');
+  assert.equal(second.els.rxStopBtn.disabled, false,
+    '恢复锁后仍须保留安全 STOP');
+  second.els.rxStartBtn.dispatch('click');
+  second.els.controlConfirmConfirm.dispatch('click');
+  for (let i = 0; i < 3; i++) await flushAsync();
+  assert.equal(startPosts, 1, '恢复后的独立锁必须在最终门控阻止第二条 START');
+});
+
+test('R96 独立安全状态无法持久化时危险命令必须在 POST 前 fail-closed', async () => {
+  const now = Date.now();
+  const durable = new Map([['iot_onenet_devices_v1', DUAL_CONFIG]]);
+  const localStorage = {
+    getItem: (key) => durable.has(key) ? durable.get(key) : null,
+    setItem: (key, value) => {
+      if (key === 'iot_control_safety_v1') throw new Error('quota');
+      durable.set(key, String(value));
+    },
+    removeItem: (key) => durable.delete(key)
+  };
+  let startPosts = 0;
+  const harness = buildControlDom();
+  loadControlPage(harness, {}, controlFetch({
+    rxItems: () => rxGateOpenItems(now),
+    postImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      if (body.params.RX_Command === 'START') startPosts++;
+      return { ok: true, status: 200,
+        json: async () => ({ code: 0, request_id: 'must-not-send', data: {} }) };
+    }
+  }), { localStorage });
+  await flushAsync();
+  harness.els.rxStartBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  for (let i = 0; i < 4; i++) await flushAsync();
+  assert.equal(startPosts, 0,
+    '无法在刷新后保持安全锁时不得把 START 发到 OneNET');
+  assert.equal(harness.els.rxStartBtn.disabled, true);
+  assert.equal(harness.els.rxStopBtn.disabled, false);
+});
+
+test('R97 损坏的独立安全状态在刷新时 fail-closed 且只保留关断命令', async () => {
+  const now = Date.now();
+  const harness = buildControlDom();
+  loadControlPage(harness, {
+    iot_onenet_devices_v1: DUAL_CONFIG,
+    iot_control_safety_v1: '{broken'
+  }, controlFetch({
+    txItems: () => fullTxItems(now),
+    rxItems: () => rxGateOpenItems(now)
+  }));
+  await flushAsync();
+  assert.equal(harness.els.txOnBtn.disabled, true);
+  assert.equal(harness.els.txFrequencyBtn.disabled, true);
+  assert.equal(harness.els.txOffBtn.disabled, false);
+  assert.equal(harness.els.rxStartBtn.disabled, true);
+  assert.equal(harness.els.rxZeroBtn.disabled, true);
+  assert.equal(harness.els.rxRateBtn.disabled, true);
+  assert.equal(harness.els.rxStopBtn.disabled, false);
+});
