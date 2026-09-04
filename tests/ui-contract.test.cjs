@@ -5522,9 +5522,14 @@ test('R80 RX 审计缺少有效命令开始时间时 fail-closed', () => {
 test('R81 validateControlParams 每次必须恰好包含一个控制属性', () => {
   const { api } = loadWebModules({});
   const tx = api.getDataModel('tx');
+  const rx = api.getDataModel('rx');
+  assert.equal(api.validateControlParams(tx, {}), false);
   assert.equal(api.validateControlParams(tx, { switch: false }), true);
   assert.equal(api.validateControlParams(tx, { setfreq: 20 }), true);
   assert.equal(api.validateControlParams(tx, { switch: false, setfreq: 20 }), false);
+  assert.equal(api.validateControlParams(tx, { current: 5 }), false);
+  assert.equal(api.validateControlParams(tx, { switch: false, extra: true }), false);
+  assert.equal(api.validateControlParams(rx, { command: 'START', extra: true }, 'rx'), false);
 });
 
 test('R82 RX 审计以 POST 前远端源时间水位确认，不受浏览器墙钟领先影响', async () => {
@@ -5613,9 +5618,12 @@ test('R83 TX ON 被 OFF 抢占后，晚到 ON 必须触发最终 OFF 或设备�
 
   const finalOff = lateEvents.some((event) =>
     event.type === 'post' && event.body.params.Switch === false);
+  const lateOffCount = lateEvents.filter((event) =>
+    event.type === 'post' && event.body.params.Switch === false).length;
   const verifiedAfterLateOn = lateEvents.some((event) => event.type === 'get');
   assert.ok(finalOff || verifiedAfterLateOn,
     '不能只忽略晚到 ON 回调；必须追加最终 OFF 或重新拉取设备状态确认安全');
+  assert.ok(lateOffCount <= 1, '最终 OFF 补偿必须有界且去重');
 });
 
 test('R84 RX START 被 STOP 抢占后，晚到 START 必须触发最终 STOP 或设备状态复核', async () => {
@@ -5660,7 +5668,113 @@ test('R84 RX START 被 STOP 抢占后，晚到 START 必须触发最终 STOP 或
 
   const finalStop = lateEvents.some((event) =>
     event.type === 'post' && event.body.params.RX_Command === 'STOP');
+  const lateStopCount = lateEvents.filter((event) =>
+    event.type === 'post' && event.body.params.RX_Command === 'STOP').length;
   const verifiedAfterLateStart = lateEvents.some((event) => event.type === 'get');
   assert.ok(finalStop || verifiedAfterLateStart,
     '不能只忽略晚到 START 回调；必须追加最终 STOP 或重新拉取设备状态确认安全');
+  assert.ok(lateStopCount <= 1, '最终 STOP 补偿必须有界且去重');
+});
+
+test('R85 TX 过流故障样本 I=5.1/S=3 不得被 5A 告警阈值提前过滤', async () => {
+  const now = Date.now();
+  const items = fullTxItems(now).map((item) => {
+    if (item.identifier === 'I') return { ...item, value: 5.1 };
+    if (item.identifier === 'S') return { ...item, value: 3 };
+    return item;
+  });
+  const { api } = loadWebModules({
+    iot_onenet_config: JSON.stringify(LEGACY_CFG)
+  }, makePropertyFetch(items));
+  const data = await api.OneNetService.getLatestData('tx');
+
+  assert.equal(api.getDataModel('tx').sensors.find((item) => item.id === 'current').max, 5);
+  assert.equal(data.current, 5.1);
+  assert.equal(data.state, 3);
+  assert.equal(data._isFresh, true);
+
+  const { api: alertApi } = loadAlertEngine();
+  const result = alertApi.WptAlertEngine.evaluateSnapshots(
+    alertSnapshots('tx', data, null), now);
+  const activeRules = result.incidents.filter((item) => item.active)
+    .map((item) => item.ruleId).sort();
+  assert.deepEqual(Array.from(activeRules), ['tx_fault', 'tx_overcurrent']);
+
+  const outOfRangeItems = items.map((item) =>
+    item.identifier === 'I' ? { ...item, value: 10.001 } : item);
+  const { api: boundedApi } = loadWebModules({
+    iot_onenet_config: JSON.stringify(LEGACY_CFG)
+  }, makePropertyFetch(outOfRangeItems));
+  const rejected = await boundedApi.OneNetService.getLatestData('tx');
+  assert.equal(rejected.current, undefined);
+  assert.equal(rejected._isFresh, false);
+});
+
+test('R86 安全锁存按远端源时间推进释放，不与领先的浏览器墙钟比较', async () => {
+  const localNow = Date.now();
+  const remoteBefore = localNow - 2000;
+  const remoteAfter = localNow - 1000;
+  let afterOff = false;
+  const txItems = () => fullTxItems(localNow).map((item) => {
+    if (item.identifier !== 'S') return item;
+    return { ...item, value: afterOff ? 0 : 2,
+      time: afterOff ? remoteAfter : remoteBefore };
+  });
+  const harness = buildControlDom();
+  loadControlPage(harness, {
+    iot_onenet_config: JSON.stringify(LEGACY_CFG)
+  }, controlFetch({
+    txItems,
+    postImpl: async () => {
+      afterOff = true;
+      return { ok: true, status: 200,
+        json: async () => ({ code: 0, data: { code: 0, msg: 'off' } }) };
+    }
+  }));
+  await flushAsync();
+  harness.els.txOffBtn.dispatch('click');
+  for (let i = 0; i < 6; i++) await flushAsync();
+
+  assert.ok(remoteAfter < localNow, '测试前提：远端源时间仍落后浏览器墙钟');
+  assert.equal(harness.els.txStateValue.textContent, '待机');
+  assert.equal(harness.els.txOnBtn.disabled, false);
+});
+
+test('R87 STOP 未获设备确认不得提前取代旧 RX 审计，确认后才可取代', async () => {
+  const now = Date.now();
+  const pendingLog = [{
+    id: 'old_start', deviceKey: 'rx', timestamp: now,
+    command: 'START', requestedValue: null, outcome: 'accepted_only',
+    accepted: true, confirmed: false, deviceCode: null, message: '', requestId: 'old',
+    auditBaseline: 10, auditSourceWatermark: now - 2000,
+    auditOutcome: 'pending', auditSequence: null, auditResult: ''
+  }];
+  const rejectedHarness = buildControlDom();
+  const { storage: rejectedStorage } = loadControlPage(rejectedHarness, {
+    iot_onenet_devices_v1: DUAL_CONFIG,
+    iot_operation_logs_v2: JSON.stringify(pendingLog)
+  }, controlFetch({
+    rxItems: () => rxGateOpenItems(now),
+    postImpl: async () => ({ ok: false, status: 500, json: async () => ({}) })
+  }));
+  await flushAsync();
+  rejectedHarness.els.rxStopBtn.dispatch('click');
+  for (let i = 0; i < 4; i++) await flushAsync();
+  let oldEntry = JSON.parse(rejectedStorage.get('iot_operation_logs_v2'))
+    .find((item) => item.id === 'old_start');
+  assert.equal(oldEntry.auditOutcome, 'pending');
+  assert.equal(rejectedHarness.els.rxStartBtn.disabled, true);
+
+  const confirmedHarness = buildControlDom();
+  const { storage: confirmedStorage } = loadControlPage(confirmedHarness, {
+    iot_onenet_devices_v1: DUAL_CONFIG,
+    iot_operation_logs_v2: JSON.stringify(pendingLog)
+  }, controlFetch({ rxItems: () => rxGateOpenItems(now) }));
+  await flushAsync();
+  confirmedHarness.els.rxStopBtn.dispatch('click');
+  for (let i = 0; i < 4; i++) await flushAsync();
+  oldEntry = JSON.parse(confirmedStorage.get('iot_operation_logs_v2'))
+    .find((item) => item.id === 'old_start');
+  assert.equal(oldEntry.auditOutcome, 'failed');
+  assert.match(oldEntry.auditResult, /STOP/);
 });
