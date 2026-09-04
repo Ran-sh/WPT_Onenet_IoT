@@ -583,7 +583,7 @@ test('R2 数据模型 V4：TX 兼容保留，RX 固定范围与云端键不可�
     rx_bonev: ['RX_BoneV', 'double', -3.3, 3.3, 0.001],
     rx_resistance: ['RX_Resistance', 'int32', -10000000, 10000000, 1],
     rx_vout: ['RX_Vout', 'double', 0, 36.3, 0.01],
-    rx_fault_flags: ['RX_FaultFlags', 'int32', 0, 511, 1],
+    rx_fault_flags: ['RX_FaultFlags', 'int32', 0, 1023, 1],
     rx_fault_reason: ['RX_FaultReason', 'string'],
     rx_state: ['RX_State', 'int32', 0, 5, 1],
     rx_telemetry_fresh: ['RX_TelemetryFresh', 'bool'],
@@ -621,7 +621,7 @@ test('R2 数据模型 V4：TX 兼容保留，RX 固定范围与云端键不可�
   const rxFixed = api2.getDataModel('rx');
   assert.equal(rxFixed.sensors.find((s) => s.id === 'rx_safe').dataType, 'bool');
   assert.equal(rxFixed.sensors.find((s) => s.id === 'rx_safe').max, undefined);
-  assert.equal(rxFixed.sensors.find((s) => s.id === 'rx_fault_flags').max, 511);
+  assert.equal(rxFixed.sensors.find((s) => s.id === 'rx_fault_flags').max, 1023);
   const tx2 = api2.getDataModel('tx');
   assert.equal(tx2.sensors.find((s) => s.id === 'freq').min, 20);
   assert.equal(tx2.sensors.find((s) => s.id === 'state').max, 3);
@@ -777,7 +777,7 @@ test('R3 类型、范围、步进不合法字段被拒绝', async () => {
         { identifier: 'RX_Vout', value: 40, data_type: 'float', time: t },
         { identifier: 'RX_Resistance', value: 1.5, data_type: 'int32', time: t },
         { identifier: 'RX_Current_uA', value: 1.2345, data_type: 'float', time: t },
-        { identifier: 'RX_FaultFlags', value: 999, data_type: 'int32', time: t }
+        { identifier: 'RX_FaultFlags', value: 1024, data_type: 'int32', time: t }
       ]
     }, 1)
   );
@@ -1178,11 +1178,20 @@ test('R6 RX 命令白名单整帧校验', () => {
 });
 
 test('R6 START 安全门控逐项翻转', () => {
-  const { api } = loadWebModules({});
+  const now = 1750000000000;
+  const { api } = loadWebModules({}, undefined, { nowMs: now });
   const base = {
     _isOnline: true, _isFresh: true,
     rx_ble_online: true, rx_connected: true, rx_valid: true, rx_safe: true,
-    rx_state: 2, rx_limit: false, rx_stim: false, rx_fault_flags: 0
+    rx_telemetry_fresh: true,
+    rx_state: 2, rx_limit: false, rx_stim: false, rx_fault_flags: 0,
+    _propertyTimes: {
+      RX_BleOnline: now - 1000, RX_Connected: now - 1000,
+      RX_Valid: now - 1000, RX_Safe: now - 1000,
+      RX_State: now - 1000, RX_Limit: now - 1000,
+      RX_Stim: now - 1000, RX_FaultFlags: now - 1000,
+      RX_TelemetryFresh: now - 1000
+    }
   };
   assert.equal(api.isReceiverStartAllowed(base), true);
   const cases = [
@@ -1195,27 +1204,37 @@ test('R6 START 安全门控逐项翻转', () => {
   for (const [key, value] of cases) {
     assert.equal(api.isReceiverStartAllowed({ ...base, [key]: value }), false, key);
   }
+  for (const cloudKey of Object.keys(base._propertyTimes)) {
+    assert.equal(api.isReceiverStartAllowed({
+      ...base,
+      _propertyTimes: { ...base._propertyTimes, [cloudKey]: now - 15001 }
+    }), false, cloudKey + ' stale');
+  }
+  assert.equal(api.isReceiverStartAllowed({ ...base, _propertyTimes: {} }), false);
   assert.equal(api.isReceiverStartAllowed({ ...base, _isOnline: 1 }), false);
   assert.equal(api.isReceiverStartAllowed(null), false);
 });
 
 test('R6 命令审计终态判定', () => {
   const { api } = loadWebModules({});
-  const ok = { rx_command_sequence: 5, rx_command: 'START', rx_command_result: 'success' };
+  const started = Date.now();
+  const times = { RX_Command: started + 1, RX_CommandResult: started + 1, RX_CommandSequence: started + 1 };
+  const ok = { rx_command_sequence: 5, rx_command: 'START', rx_command_result: 'success', _propertyTimes: times };
   const shape = (outcome) => JSON.stringify(outcome);
-  assert.equal(shape(api.getReceiverCommandOutcome(ok, 4, 'START')), shape({ isNew: true, outcome: 'success', sequence: 5 }));
-  assert.equal(shape(api.getReceiverCommandOutcome({ ...ok, rx_command_result: 'ACCEPTED' }, 4, 'START')), shape({ isNew: true, outcome: 'pending', sequence: 5 }));
-  assert.equal(shape(api.getReceiverCommandOutcome({ ...ok, rx_command: 'STOP' }, 4, 'START')), shape({ isNew: false, outcome: 'pending', sequence: null }));
-  assert.equal(shape(api.getReceiverCommandOutcome({ ...ok, rx_command_sequence: 4 }, 4, 'START')), shape({ isNew: false, outcome: 'pending', sequence: null }));
-  assert.equal(shape(api.getReceiverCommandOutcome({ ...ok, rx_command_sequence: 3 }, 4, 'START')), shape({ isNew: false, outcome: 'pending', sequence: null }));
+  const audit = (data, baseline, command) => api.getReceiverCommandOutcome(data, baseline, command, started);
+  assert.equal(shape(audit(ok, 4, 'START')), shape({ isNew: true, outcome: 'success', sequence: 5 }));
+  assert.equal(shape(audit({ ...ok, rx_command_result: 'ACCEPTED' }, 4, 'START')), shape({ isNew: true, outcome: 'pending', sequence: 5 }));
+  assert.equal(shape(audit({ ...ok, rx_command: 'STOP' }, 4, 'START')), shape({ isNew: false, outcome: 'pending', sequence: null }));
+  assert.equal(shape(audit({ ...ok, rx_command_sequence: 4 }, 4, 'START')), shape({ isNew: false, outcome: 'pending', sequence: null }));
+  assert.equal(shape(audit({ ...ok, rx_command_sequence: 3 }, 4, 'START')), shape({ isNew: false, outcome: 'pending', sequence: null }));
   for (const res of ['START rejected', 'receiver timeout', 'BLE disconnected', 'rejected by receiver']) {
-    assert.equal(shape(api.getReceiverCommandOutcome({ ...ok, rx_command_result: res }, 4, 'START')), shape({ isNew: true, outcome: 'failed', sequence: 5 }), res);
+    assert.equal(shape(audit({ ...ok, rx_command_result: res }, 4, 'START')), shape({ isNew: true, outcome: 'failed', sequence: 5 }), res);
   }
-  assert.equal(shape(api.getReceiverCommandOutcome({ ...ok, rx_command_result: 'processing' }, 4, 'START')), shape({ isNew: true, outcome: 'pending', sequence: 5 }));
-  assert.equal(shape(api.getReceiverCommandOutcome(null, 4, 'START')), shape({ isNew: false, outcome: 'pending', sequence: null }));
+  assert.equal(shape(audit({ ...ok, rx_command_result: 'processing' }, 4, 'START')), shape({ isNew: true, outcome: 'pending', sequence: 5 }));
+  assert.equal(shape(audit(null, 4, 'START')), shape({ isNew: false, outcome: 'pending', sequence: null }));
   const maxSeq = 2147483647;
-  assert.equal(shape(api.getReceiverCommandOutcome({ ...ok, rx_command_sequence: 1 }, maxSeq, 'START')), shape({ isNew: true, outcome: 'success', sequence: 1 }));
-  assert.equal(shape(api.getReceiverCommandOutcome({ ...ok, rx_command_sequence: 2 }, maxSeq, 'START')), shape({ isNew: false, outcome: 'pending', sequence: null }));
+  assert.equal(shape(audit({ ...ok, rx_command_sequence: 1 }, maxSeq, 'START')), shape({ isNew: true, outcome: 'success', sequence: 1 }));
+  assert.equal(shape(audit({ ...ok, rx_command_sequence: 2 }, maxSeq, 'START')), shape({ isNew: false, outcome: 'pending', sequence: null }));
 });
 
 test('R7 按时间戳对齐 TX/RX 历史', () => {
@@ -1590,7 +1609,8 @@ function loadPage(pageScript, harness, initialStorage = {}, fetchImpl, preScript
     AbortController, setTimeout, clearTimeout,
     setInterval: (fn, ms) => { timerId++; timers.push({ id: timerId, fn, ms }); return timerId; },
     clearInterval: (id) => { const i = timers.findIndex((t) => t.id === id); if (i >= 0) timers.splice(i, 1); },
-    Date, Promise, Set, Object, Array, JSON, Math, Number, String, encodeURIComponent
+    Date: options.Date || Date,
+    Promise, Set, Object, Array, JSON, Math, Number, String, encodeURIComponent
   };
   vm.createContext(context);
   const scripts = [read('js/config.js'), read('js/onenet.js'), read('js/ui-common.js')]
@@ -1673,7 +1693,9 @@ test('WptUi.rxFaultText 解码 RX 故障位（R1）', () => {
   assert.equal(api.WptUi.rxFaultText(NaN), '未知');
   assert.equal(api.WptUi.rxFaultText('21'), '未知');
   assert.equal(api.WptUi.rxFaultText(-1), '未知');
-  assert.equal(api.WptUi.rxFaultText(512), '未知');
+  assert.equal(api.WptUi.rxFaultText(512), '0x0200 · 控制队列溢出');
+  assert.equal(api.WptUi.rxFaultText(1023), '0x03FF · 硬件限流、ADC采样无效、输出电压过低、输出电压过高、骨电压越界、过流、BLE断开、控制保活超时、遥测异常、控制队列溢出');
+  assert.equal(api.WptUi.rxFaultText(1024), '未知');
   assert.equal(api.WptUi.rxFaultText(1.5), '未知');
 });
 
@@ -2738,11 +2760,20 @@ test('R10 RX_Safe 文案为启动门控语义且页面标签同步', () => {
   assert.doesNotMatch(read('index.html'), /<h4>安全<\/h4>/);
   assert.doesNotMatch(read('monitoring.html'), /<span>安全<\/span>/);
   /* START 安全门控逻辑不受影响 */
-  const { api: api2 } = loadWebModules({});
+  const now = 1750000000000;
+  const { api: api2 } = loadWebModules({}, undefined, { nowMs: now });
   const base = {
     _isOnline: true, _isFresh: true,
     rx_ble_online: true, rx_connected: true, rx_valid: true, rx_safe: true,
-    rx_state: 2, rx_limit: false, rx_stim: false, rx_fault_flags: 0
+    rx_telemetry_fresh: true,
+    rx_state: 2, rx_limit: false, rx_stim: false, rx_fault_flags: 0,
+    _propertyTimes: {
+      RX_BleOnline: now - 1000, RX_Connected: now - 1000,
+      RX_Valid: now - 1000, RX_Safe: now - 1000,
+      RX_State: now - 1000, RX_Limit: now - 1000,
+      RX_Stim: now - 1000, RX_FaultFlags: now - 1000,
+      RX_TelemetryFresh: now - 1000
+    }
   };
   assert.equal(api2.isReceiverStartAllowed(base), true);
   assert.equal(api2.isReceiverStartAllowed({ ...base, rx_safe: false }), false);
@@ -2955,7 +2986,8 @@ function rxGateOpenItems(now) {
   return fullRxItems(now).concat([
     { identifier: 'RX_BleOnline', value: true, data_type: 'bool', time: now - 1000 },
     { identifier: 'RX_Safe', value: true, data_type: 'bool', time: now - 1000 },
-    { identifier: 'RX_State', value: 2, data_type: 'int32', time: now - 1000 }
+    { identifier: 'RX_State', value: 2, data_type: 'int32', time: now - 1000 },
+    { identifier: 'RX_CommandSequence', value: 0, data_type: 'int32', time: now - 1000 }
   ]);
 }
 
@@ -3008,18 +3040,22 @@ function buildControlDom() {
   return { ...h, els };
 }
 
-function loadControlPage(harness, initialStorage, fetchImpl) {
-  return loadPage('js/control-page.js', harness, initialStorage, fetchImpl, ['js/control-core.js']);
+function loadControlPage(harness, initialStorage, fetchImpl, options = {}) {
+  return loadPage('js/control-page.js', harness, initialStorage, fetchImpl, ['js/control-core.js'], options);
 }
 
 test('R19 命令真实成功/失败文本、回绕与未知文本分类', () => {
   const { api } = loadWebModules({});
   const shape = (o) => JSON.stringify(o);
-  const audit = (cmd, res, base, seq) => api.getReceiverCommandOutcome({ rx_command_sequence: seq, rx_command: cmd, rx_command_result: res }, base, cmd);
+  const started = Date.now();
+  const times = { RX_Command: started + 1, RX_CommandResult: started + 1, RX_CommandSequence: started + 1 };
+  const audit = (cmd, res, base, seq) => api.getReceiverCommandOutcome({
+    rx_command_sequence: seq, rx_command: cmd, rx_command_result: res, _propertyTimes: times
+  }, base, cmd, started);
   const successCases = [
     ['START', 'START accepted', 4, 5],
     ['STOP', 'stopped; fault cleared', 4, 5],
-    ['STATUS', 'STATUS:requested:ok', 4, 5],
+    ['STATUS', 'READY:requested:F=0000', 4, 5],
     ['ZERO', 'software zero recorded', 4, 5],
     ['RATE', 'rate accepted', 4, 5]
   ];
@@ -3027,10 +3063,10 @@ test('R19 命令真实成功/失败文本、回绕与未知文本分类', () => 
     assert.equal(shape(audit(cmd, res, base, seq)), shape({ isNew: true, outcome: 'success', sequence: seq }), cmd + ':' + res);
   }
   const failureCases = [
-    ['START', 'START rejected: limit', 4, 5],
+    ['START', 'FAULT:START rejected:F=0002', 4, 5],
     ['STOP', 'fault remains', 4, 5],
     ['ZERO', 'ZERO rejected', 4, 5],
-    ['RATE', 'ERROR rate 100', 4, 5],
+    ['RATE', 'ERROR rate 100..5000', 4, 5],
     ['STATUS', 'receiver timeout', 4, 5],
     ['START', 'BLE disconnected', 4, 5],
     ['STOP', 'rejected by receiver', 4, 5]
@@ -3041,8 +3077,20 @@ test('R19 命令真实成功/失败文本、回绕与未知文本分类', () => 
   assert.equal(shape(audit('START', 'queued somewhere', 4, 5)), shape({ isNew: true, outcome: 'pending', sequence: 5 }));
   assert.equal(shape(audit('START', 'success', 2147483647, 1)), shape({ isNew: true, outcome: 'success', sequence: 1 }));
   assert.equal(shape(audit('START', 'success', 2147483647, 2)), shape({ isNew: false, outcome: 'pending', sequence: null }));
-  assert.equal(shape(api.getReceiverCommandOutcome({ rx_command_sequence: 5, rx_command: 'START', rx_command_result: 'START accepted' }, 4, 'STOP')), shape({ isNew: false, outcome: 'pending', sequence: null }));
-  assert.equal(shape(api.getReceiverCommandOutcome(null, 4, 'START')), shape({ isNew: false, outcome: 'pending', sequence: null }));
+  assert.equal(shape(api.getReceiverCommandOutcome({
+    rx_command_sequence: 5, rx_command: 'START', rx_command_result: 'START accepted', _propertyTimes: times
+  }, 4, 'STOP', started)), shape({ isNew: false, outcome: 'pending', sequence: null }));
+  const oldTimes = { RX_Command: started - 1, RX_CommandResult: started - 1, RX_CommandSequence: started - 1 };
+  assert.equal(shape(api.getReceiverCommandOutcome({
+    rx_command_sequence: 5, rx_command: 'START',
+    rx_command_result: 'READY:START accepted:F=0000', _propertyTimes: oldTimes
+  }, 4, 'START', started)), shape({ isNew: false, outcome: 'pending', sequence: null }));
+  const newTimes = { RX_Command: started + 1, RX_CommandResult: started + 1, RX_CommandSequence: started + 1 };
+  assert.equal(shape(api.getReceiverCommandOutcome({
+    rx_command_sequence: 5, rx_command: 'START',
+    rx_command_result: 'not start accepted; still unsafe', _propertyTimes: newTimes
+  }, 4, 'START', started)), shape({ isNew: true, outcome: 'pending', sequence: 5 }));
+  assert.equal(shape(api.getReceiverCommandOutcome(null, 4, 'START', started)), shape({ isNew: false, outcome: 'pending', sequence: null }));
 });
 
 test('R20 WptControlCore 权限/校验/结果分类', () => {
@@ -3064,7 +3112,8 @@ test('R20 WptControlCore 权限/校验/结果分类', () => {
   assert.equal(C.validateRate(100.5), false);
 
   const configured = { PRODUCT_ID: 'p', DEVICE_NAME: 'd', TOKEN: 't' };
-  const liveData = { _isMock: false, _isOnline: true, _isFresh: true, state: 0 };
+  const liveData = { _isMock: false, _isOnline: true, _isFresh: true,
+    _telemetryTimestamp: Date.now(), state: 0 };
   let txp = C.getTxPermissions({ config: configured, data: liveData, error: null, pending: false });
   assert.equal(txp.configured, true);
   assert.equal(txp.live, true);
@@ -3078,16 +3127,36 @@ test('R20 WptControlCore 权限/校验/结果分类', () => {
   assert.equal(txp.live, false);
   assert.equal(txp.on, false);
   assert.equal(txp.setfreq, false);
-  /* 新契约：OFF 同样要求实时可用，离线/过期时全部控制禁用。 */
-  assert.equal(txp.off, false);
+  /* 失效安全：只要端点已配置，OFF 不受实时性或普通 pending 阻塞。 */
+  assert.equal(txp.off, true);
+  txp = C.getTxPermissions({ config: configured,
+    data: { ...liveData, _telemetryTimestamp: Date.now() - 60000 },
+    error: null, pending: false });
+  assert.equal(txp.on, false);
+  assert.equal(txp.setfreq, false);
+  assert.equal(txp.off, true);
   txp = C.getTxPermissions({ config: configured, data: liveData, error: null, pending: true });
   assert.equal(txp.on, false);
-  assert.equal(txp.off, false);
+  assert.equal(txp.off, true);
   txp = C.getTxPermissions({ config: null, data: liveData, error: null, pending: false });
   assert.equal(txp.on, false);
   assert.equal(txp.off, false);
 
-  const rxGate = { _isOnline: true, _isFresh: true, rx_ble_online: true, rx_connected: true, rx_valid: true, rx_safe: true, rx_state: 2, rx_limit: false, rx_stim: false, rx_fault_flags: 0 };
+  const gateNow = Date.now();
+  const rxGate = {
+    _isOnline: true, _isFresh: true, _telemetryTimestamp: gateNow - 1000,
+    rx_ble_online: true, rx_connected: true,
+    rx_telemetry_fresh: true,
+    rx_valid: true, rx_safe: true, rx_state: 2, rx_limit: false,
+    rx_stim: false, rx_fault_flags: 0,
+    _propertyTimes: {
+      RX_BleOnline: gateNow - 1000, RX_Connected: gateNow - 1000,
+      RX_Valid: gateNow - 1000, RX_Safe: gateNow - 1000,
+      RX_State: gateNow - 1000, RX_Limit: gateNow - 1000,
+      RX_Stim: gateNow - 1000, RX_FaultFlags: gateNow - 1000,
+      RX_TelemetryFresh: gateNow - 1000
+    }
+  };
   let rxp = C.getRxPermissions({ config: configured, data: rxGate, error: null, pending: false });
   assert.equal(rxp.start, true);
   assert.equal(rxp.zero, true);
@@ -3100,11 +3169,11 @@ test('R20 WptControlCore 权限/校验/结果分类', () => {
   assert.equal(rxp.stop, true);
   rxp = C.getRxPermissions({ config: configured, data: null, error: new Error('x'), pending: false });
   assert.equal(rxp.start, false);
-  assert.equal(rxp.stop, false);
+  assert.equal(rxp.stop, true);
   assert.equal(rxp.status, false);
   assert.equal(rxp.rate, false);
   rxp = C.getRxPermissions({ config: configured, data: rxGate, error: null, pending: true });
-  assert.equal(rxp.stop, false);
+  assert.equal(rxp.stop, true);
 
   const cls = (r) => JSON.stringify(C.classifyPropertyOutcome(r));
   assert.equal(cls({ confirmed: true }), JSON.stringify({ outcome: 'confirmed', label: '设备已确认执行' }));
@@ -3149,7 +3218,7 @@ test('R24 操作日志 schema、清洗与损坏 JSON 处理', () => {
   logs = context.__web.WptControlCore.readOperationLogs();
   assert.equal(logs.length, 1);
   assert.equal(logs[0].id, 'ok');
-  assert.equal(C.updateOperationLog(logs[0].id, { auditOutcome: 'success', auditSequence: 7, auditResult: 'ok' }), true);
+  assert.equal(C.updateOperationLog('tx', logs[0].id, { auditOutcome: 'success', auditSequence: 7, auditResult: 'ok' }), true);
   logs = C.readOperationLogs();
   assert.equal(logs[0].auditOutcome, 'success');
   assert.equal(logs[0].auditSequence, 7);
@@ -3245,7 +3314,43 @@ test('R22 TX 运行态 ON 与非法频率被拦截，OFF 防重入且异常解�
   assert.equal(harness.els.txOffBtn.disabled, false);
 });
 
-test('R23 RX START 门控确认后单次 POST；门控关闭与非法 RATE 拦截；STOP 离线被拦截', async () => {
+test('R77 普通 TX 命令 pending 时 OFF 走独立安全代际且旧回调不能覆盖', async () => {
+  const now = Date.now();
+  const postBodies = [];
+  let releaseOn;
+  const onGate = new Promise((resolve) => { releaseOn = resolve; });
+  const harness = buildControlDom();
+  const { storage } = loadControlPage(harness,
+    { iot_onenet_config: JSON.stringify(LEGACY_CFG) }, controlFetch({
+      txItems: () => fullTxItems(now).map((item) =>
+        item.identifier === 'S' ? { ...item, value: 0 } : item),
+      postImpl: async (url, options) => {
+        const body = JSON.parse(options.body);
+        postBodies.push(body);
+        if (body.params.Switch === true) return onGate;
+        return { ok: true, status: 200,
+          json: async () => ({ code: 0, data: { code: 0, msg: 'off' } }) };
+      }
+    }));
+  await flushAsync();
+  harness.els.txOnBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  await flushAsync();
+  assert.equal(postBodies.length, 1);
+  harness.els.txOffBtn.dispatch('click');
+  await flushAsync();
+  assert.equal(postBodies.length, 2);
+  assert.equal(postBodies[1].params.Switch, false);
+  releaseOn({ ok: true, status: 200,
+    json: async () => ({ code: 0, data: { code: 0, msg: 'late on' } }) });
+  await flushAsync();
+  await flushAsync();
+  const logs = JSON.parse(storage.get('iot_operation_logs_v2'));
+  assert.equal(logs[0].command, 'OFF');
+  assert.equal(logs.some((entry) => entry.command === 'ON'), false);
+});
+
+test('R23 RX START 门控确认后单次 POST；门控关闭与非法 RATE 拦截；STOP 离线仍可安全下发', async () => {
   const now = Date.now();
   const postBodies = [];
   const harness = buildControlDom();
@@ -3267,7 +3372,7 @@ test('R23 RX START 门控确认后单次 POST；门控关闭与非法 RATE 拦�
   const logs = JSON.parse(storage.get('iot_operation_logs_v2'));
   assert.equal(logs[0].command, 'START');
   assert.equal(logs[0].outcome, 'confirmed');
-  assert.equal(logs[0].auditBaseline, null);
+  assert.equal(logs[0].auditBaseline, 0);
 
   const harness2 = buildControlDom();
   const { storage: storage2 } = loadControlPage(harness2, { iot_onenet_devices_v1: DUAL_CONFIG }, controlFetch({
@@ -3305,10 +3410,9 @@ test('R23 RX START 门控确认后单次 POST；门控关闭与非法 RATE 拦�
   assert.equal(harness3.els.rxEndpointState.textContent, '离线');
   harness3.els.rxStopBtn.dispatch('click');
   await flushAsync();
-  /* 新契约：离线/详情失败时 STOP 一并禁用——不发 POST。 */
-  assert.equal(stopPosts, 0);
-  assert.match(harness3.els.controlStatus.textContent, /已拦截/);
-  assert.match(harness3.els.controlStatus.textContent, /实时数据不可用/);
+  /* 失效安全：详情失败不妨碍已配置端点下发幂等 STOP。 */
+  assert.equal(stopPosts, 1);
+  assert.match(harness3.els.controlStatus.textContent, /设备已确认执行/);
 });
 
 test('R25 双端独立降级与共享轮询，页面不读旧缓存', async () => {
@@ -3365,13 +3469,19 @@ test('R28 SW web-4 预缓存控制模块', () => {
 test('R30 RATE 审计按命令类型解析且 not accepted 不误判成功', () => {
   const { api } = loadWebModules({});
   const shape = (o) => JSON.stringify(o);
-  const audit = (cmd, res, base, seq) => api.getReceiverCommandOutcome({ rx_command_sequence: seq, rx_command: cmd, rx_command_result: res }, base, cmd);
+  const started = Date.now();
+  const times = { RX_Command: started + 1, RX_CommandResult: started + 1, RX_CommandSequence: started + 1 };
+  const audit = (cmd, res, base, seq) => api.getReceiverCommandOutcome({
+    rx_command_sequence: seq, rx_command: cmd, rx_command_result: res, _propertyTimes: times
+  }, base, cmd, started);
   assert.equal(shape(audit('RATE=2500', 'rate accepted', 4, 5)), shape({ isNew: true, outcome: 'success', sequence: 5 }));
-  assert.equal(shape(audit('RATE=2500', 'ERROR rate 100', 4, 5)), shape({ isNew: true, outcome: 'failed', sequence: 5 }));
+  assert.equal(shape(audit('RATE=2500', 'ERROR rate 100..5000', 4, 5)), shape({ isNew: true, outcome: 'failed', sequence: 5 }));
   assert.equal(shape(audit('RATE=2500', 'not accepted', 4, 5)), shape({ isNew: true, outcome: 'pending', sequence: 5 }));
   assert.equal(shape(audit('START', 'ACCEPTED', 4, 5)), shape({ isNew: true, outcome: 'pending', sequence: 5 }));
   assert.equal(shape(audit('START', 'success', 4, 5)), shape({ isNew: true, outcome: 'success', sequence: 5 }));
-  assert.equal(shape(api.getReceiverCommandOutcome({ rx_command_sequence: 5, rx_command: 'RATE=2500', rx_command_result: 'rate accepted' }, 4, 'RATE=2501')), shape({ isNew: false, outcome: 'pending', sequence: null }));
+  assert.equal(shape(api.getReceiverCommandOutcome({
+    rx_command_sequence: 5, rx_command: 'RATE=2500', rx_command_result: 'rate accepted', _propertyTimes: times
+  }, 4, 'RATE=2501', started)), shape({ isNew: false, outcome: 'pending', sequence: null }));
 });
 
 test('R31 确认后最终门控：快照失效时 blocked 且不 POST', async () => {
@@ -5179,4 +5289,378 @@ test('R2/R3 RX 审计卡片优先最新未完成，无未完成时选最新已�
   await flushAsync();
   assert.equal(harness2.els.rxAuditCommand.textContent, 'RATE=2500');
   assert.equal(harness2.els.rxAuditResult.textContent, '失败 · ERROR rate 100');
+});
+
+/* ========== R71-R76 联调缺陷回归 ========== */
+
+test('R71 RX START/ZERO 在确认后按 Date.now 重新校验每个安全属性的 15 秒新鲜度', async () => {
+  const sourceNow = 1750000000000;
+  let clock = sourceNow;
+  let postCount = 0;
+  class FakeDate extends Date {
+    static now() { return clock; }
+  }
+  const fetchImpl = controlFetch({
+    rxItems: () => rxGateOpenItems(sourceNow),
+    postImpl: async () => {
+      postCount++;
+      return { ok: true, status: 200, json: async () => ({ code: 0, data: { code: 0 } }) };
+    }
+  });
+
+  for (const buttonId of ['rxStartBtn', 'rxZeroBtn']) {
+    clock = sourceNow;
+    const harness = buildControlDom();
+    const { storage } = loadControlPage(
+      harness,
+      { iot_onenet_devices_v1: DUAL_CONFIG },
+      fetchImpl,
+      { Date: FakeDate }
+    );
+    await flushAsync();
+    harness.els[buttonId].dispatch('click');
+    assert.equal(harness.els.controlConfirmDialog.hidden, false, buttonId);
+    clock = sourceNow + 16001;
+    harness.els.controlConfirmConfirm.dispatch('click');
+    await flushAsync();
+    assert.equal(postCount, 0, buttonId + ' stale snapshot must not POST');
+    const logs = JSON.parse(storage.get('iot_operation_logs_v2'));
+    assert.equal(logs[0].outcome, 'blocked', buttonId);
+  }
+});
+
+test('R72 数据模型拒绝 sensors/controls 跨组同 ID，sendProperty 只按 controls 映射', async () => {
+  const storedModel = JSON.stringify({
+    sensors: [
+      { id: 'switch', name: '劫持', cloudKey: 'HijackedSwitch', dataType: 'bool' },
+      { id: 'shadow_current', name: '影子电流', cloudKey: 'I', dataType: 'double' },
+      { id: 'shared_custom', name: '共享传感器', cloudKey: 'SharedSensor', dataType: 'double' }
+    ],
+    controls: [
+      { id: 'voltage', name: '劫持', cloudKey: 'HijackedVoltage', dataType: 'double' },
+      { id: 'shared_custom', name: '共享控制', cloudKey: 'SharedControl', dataType: 'bool' }
+    ]
+  });
+  let body = null;
+  const fetchImpl = async (url, options) => {
+    body = JSON.parse(options.body);
+    return { ok: true, status: 200, json: async () => ({ code: 0, data: { code: 0 } }) };
+  };
+  const { api } = loadWebModules({
+    iot_data_model: storedModel,
+    iot_onenet_config: JSON.stringify(LEGACY_CFG)
+  }, fetchImpl);
+  const model = api.getDataModel('tx');
+  const sensorIds = new Set(model.sensors.map((item) => item.id));
+  assert.equal(model.controls.some((item) => sensorIds.has(item.id)), false);
+  assert.equal(model.sensors.some((item) => item.id === 'shadow_current'), false);
+  assert.equal(await api.OneNetService.sendProperty('tx', { switch: true }).then((r) => r.confirmed), true);
+  assert.deepEqual(body.params, { Switch: true });
+  const sendSource = extractFunction(read('js/onenet.js'), 'static async sendProperty');
+  assert.doesNotMatch(sendSource, /model\.sensors\.forEach/);
+});
+
+test('R73 RX bit9 控制队列溢出保持实时、可解码并触发严重告警', async () => {
+  const now = Date.now();
+  const items = fullRxItems(now).map((item) =>
+    item.identifier === 'RX_FaultFlags' ? { ...item, value: 512 } : item
+  );
+  const { api } = loadWebModules(
+    { iot_onenet_devices_v1: DUAL_CONFIG },
+    makePropertyFetch({ list: items }, 1)
+  );
+  const latest = await api.OneNetService.getLatestData('rx');
+  assert.equal(latest.rx_fault_flags, 512);
+  assert.equal(latest._isFresh, true);
+
+  const { api: alertApi } = loadAlertEngine();
+  alertApi.WptAlertEngine.evaluateSnapshots(
+    alertSnapshots('rx', alertData('RX_FaultFlags', 'rx_fault_flags', 512, now), null),
+    now
+  );
+  const incident = alertApi.WptAlertEngine.getIncidents().find((item) => item.ruleId === 'rx_fault_flags');
+  assert.equal(incident.active, true);
+  assert.equal(incident.severity, 'critical');
+});
+
+test('R74 resolved activeIncidentId 会被清除，新故障必须创建新活动事件', () => {
+  const now = 1750000000000;
+  const t1 = now - 3000;
+  const t2 = now - 2000;
+  const t3 = now - 1000;
+  const { api, storage } = loadAlertEngine();
+  const E = api.WptAlertEngine;
+  E.evaluateSnapshots(alertSnapshots('tx', alertData('S', 'state', 3, now, { time: t1 }), null), now);
+  E.evaluateSnapshots(alertSnapshots('tx', alertData('S', 'state', 0, now, { time: t2 }), null), now);
+  const resolvedId = 'tx:tx_fault:' + t1;
+  storage.set('iot_alarm_states_v2', JSON.stringify({
+    'tx:tx_fault': { version: 1, lastSourceTime: t2, activeIncidentId: resolvedId }
+  }));
+
+  E.evaluateSnapshots(alertSnapshots('tx', alertData('S', 'state', 3, now, { time: t3 }), null), now);
+  const active = E.getIncidents().filter((item) => item.ruleId === 'tx_fault' && item.active);
+  assert.equal(active.length, 1);
+  assert.equal(active[0].id, 'tx:tx_fault:' + t3);
+});
+
+test('R75 BFCache pagehide/pageshow persisted 恢复时只保留一个轮询', async () => {
+  const timers = [];
+  const listeners = {};
+  let timerId = 0;
+  let runs = 0;
+  const documentStub = {
+    visibilityState: 'visible',
+    addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); }
+  };
+  const windowStub = {
+    addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); },
+    dispatch: (type, event) => { (listeners[type] || []).forEach((fn) => fn(event || {})); }
+  };
+  const { api } = loadUiCommon({
+    document: documentStub,
+    window: windowStub,
+    setInterval: (fn, ms) => { timerId++; timers.push({ id: timerId, fn, ms }); return timerId; },
+    clearInterval: (id) => { const index = timers.findIndex((timer) => timer.id === id); if (index >= 0) timers.splice(index, 1); }
+  });
+  const poller = api.WptUi.createLifecyclePoller(async () => { runs++; }, 5000);
+  poller.start();
+  await flushAsync();
+  assert.equal(timers.length, 1);
+  windowStub.dispatch('pagehide', { persisted: true });
+  assert.equal(timers.length, 0);
+  windowStub.dispatch('pageshow', { persisted: true });
+  windowStub.dispatch('pageshow', { persisted: true });
+  await flushAsync();
+  assert.equal(timers.length, 1);
+  assert.equal(runs, 2);
+  windowStub.dispatch('pagehide', { persisted: false });
+  windowStub.dispatch('pageshow', { persisted: true });
+  assert.equal(timers.length, 0);
+});
+
+test('R76 操作日志更新必须同时匹配 deviceKey 与 id', () => {
+  const now = Date.now();
+  const sameIdLogs = [
+    { id: 'same', deviceKey: 'tx', timestamp: now, command: 'ON', outcome: 'confirmed', auditOutcome: 'pending' },
+    { id: 'same', deviceKey: 'rx', timestamp: now - 1, command: 'START', outcome: 'confirmed', auditOutcome: 'pending' }
+  ];
+  const { api } = loadControlCore({ iot_operation_logs_v2: JSON.stringify(sameIdLogs) });
+  const C = api.WptControlCore;
+  assert.equal(C.updateOperationLog('rx', 'same', {
+    auditOutcome: 'success', auditSequence: 7, auditResult: 'START accepted'
+  }), true);
+  const logs = C.readOperationLogs();
+  const tx = logs.find((item) => item.deviceKey === 'tx');
+  const rx = logs.find((item) => item.deviceKey === 'rx');
+  assert.equal(tx.auditOutcome, 'pending');
+  assert.equal(rx.auditOutcome, 'success');
+  assert.equal(rx.auditSequence, 7);
+});
+
+test('R78 RX 审计等待超过确认窗口会终结为失败而不是永久占位', async () => {
+  const now = Date.now();
+  const pendingLog = [{
+    id: 'rx_timeout', deviceKey: 'rx', timestamp: now - 20000,
+    command: 'START', requestedValue: null, outcome: 'accepted_only',
+    accepted: true, confirmed: false, deviceCode: null, message: '', requestId: 'r',
+    auditBaseline: 10, auditOutcome: 'pending', auditSequence: null, auditResult: ''
+  }];
+  const harness = buildControlDom();
+  const { storage } = loadControlPage(harness, {
+    iot_onenet_devices_v1: DUAL_CONFIG,
+    iot_operation_logs_v2: JSON.stringify(pendingLog)
+  }, controlFetch({ rxItems: () => rxGateOpenItems(now) }));
+  await flushAsync();
+  const logs = JSON.parse(storage.get('iot_operation_logs_v2'));
+  const entry = logs.find((item) => item.id === 'rx_timeout');
+  assert.equal(entry.auditOutcome, 'failed');
+  assert.match(entry.auditResult, /超时/);
+  assert.match(harness.els.rxAuditResult.textContent, /失败/);
+});
+
+test('R79 RX accepted-only 审计未终态时锁住危险命令但保留 STOP', async () => {
+  const now = Date.now();
+  const pendingLog = [{
+    id: 'rx_pending', deviceKey: 'rx', timestamp: now,
+    command: 'START', requestedValue: null, outcome: 'accepted_only',
+    accepted: true, confirmed: false, deviceCode: null, message: '', requestId: 'r',
+    auditBaseline: 10, auditOutcome: 'pending', auditSequence: null, auditResult: ''
+  }];
+  const harness = buildControlDom();
+  loadControlPage(harness, {
+    iot_onenet_devices_v1: DUAL_CONFIG,
+    iot_operation_logs_v2: JSON.stringify(pendingLog)
+  }, controlFetch({ rxItems: () => rxGateOpenItems(now) }));
+  await flushAsync();
+  assert.equal(harness.els.rxStartBtn.disabled, true);
+  assert.equal(harness.els.rxRateBtn.disabled, true);
+  assert.equal(harness.els.rxStopBtn.disabled, false);
+  assert.match(harness.els.rxGateReason.textContent, /等待上一条/);
+});
+
+test('R80 RX 审计缺少有效命令开始时间时 fail-closed', () => {
+  const { api } = loadWebModules({});
+  const started = Date.now();
+  const data = {
+    rx_command_sequence: 5,
+    rx_command: 'START',
+    rx_command_result: 'READY:START accepted:F=0000',
+    _propertyTimes: {
+      RX_Command: started + 1,
+      RX_CommandResult: started + 1,
+      RX_CommandSequence: started + 1
+    }
+  };
+  for (const invalidStarted of [undefined, 0, NaN]) {
+    const outcome = api.getReceiverCommandOutcome(data, 4, 'START', invalidStarted);
+    assert.deepEqual(JSON.parse(JSON.stringify(outcome)), {
+      isNew: false, outcome: 'pending', sequence: null
+    });
+  }
+});
+
+test('R81 validateControlParams 每次必须恰好包含一个控制属性', () => {
+  const { api } = loadWebModules({});
+  const tx = api.getDataModel('tx');
+  assert.equal(api.validateControlParams(tx, { switch: false }), true);
+  assert.equal(api.validateControlParams(tx, { setfreq: 20 }), true);
+  assert.equal(api.validateControlParams(tx, { switch: false, setfreq: 20 }), false);
+});
+
+test('R82 RX 审计以 POST 前远端源时间水位确认，不受浏览器墙钟领先影响', async () => {
+  const localNow = Date.now();
+  const remoteBefore = localNow - 60000;
+  const remoteAfter = remoteBefore + 1000;
+  let afterPost = false;
+  const rxItems = () => rxGateOpenItems(localNow)
+    .filter((item) => item.identifier !== 'RX_CommandSequence')
+    .concat(afterPost ? [
+      { identifier: 'RX_Command', value: 'START', data_type: 'string', time: remoteAfter },
+      { identifier: 'RX_CommandResult', value: 'READY:START accepted:F=0000', data_type: 'string', time: remoteAfter },
+      { identifier: 'RX_CommandSequence', value: 11, data_type: 'int32', time: remoteAfter }
+    ] : [
+      { identifier: 'RX_Command', value: 'STATUS', data_type: 'string', time: remoteBefore },
+      { identifier: 'RX_CommandResult', value: 'READY:requested:F=0000', data_type: 'string', time: remoteBefore },
+      { identifier: 'RX_CommandSequence', value: 10, data_type: 'int32', time: remoteBefore }
+    ]);
+  const harness = buildControlDom();
+  const { storage } = loadControlPage(harness, {
+    iot_onenet_devices_v1: DUAL_CONFIG
+  }, controlFetch({
+    rxItems,
+    postImpl: async () => {
+      afterPost = true;
+      return { ok: true, status: 200,
+        json: async () => ({ code: 0, msg: 'accepted', data: {} }) };
+    }
+  }));
+  await flushAsync();
+
+  harness.els.rxStartBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  for (let i = 0; i < 6; i++) await flushAsync();
+
+  const entry = JSON.parse(storage.get('iot_operation_logs_v2'))
+    .find((item) => item.command === 'START');
+  assert.ok(entry);
+  assert.equal(entry.auditBaseline, 10);
+  assert.equal(entry.auditSourceWatermark, remoteBefore);
+  assert.ok(entry.timestamp > remoteAfter, '测试前提：浏览器墙钟领先于远端源时间');
+  assert.equal(entry.auditOutcome, 'success');
+  assert.equal(entry.auditSequence, 11);
+});
+
+test('R83 TX ON 被 OFF 抢占后，晚到 ON 必须触发最终 OFF 或设备状态复核', async () => {
+  const now = Date.now();
+  let releaseOn;
+  let observeLateRecovery = false;
+  const onGate = new Promise((resolve) => { releaseOn = resolve; });
+  const postBodies = [];
+  const lateEvents = [];
+  const baseFetch = controlFetch({
+    txItems: () => fullTxItems(now).map((item) =>
+      item.identifier === 'S' ? { ...item, value: 0 } : item),
+    postImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      postBodies.push(body);
+      if (observeLateRecovery) lateEvents.push({ type: 'post', body });
+      if (body.params.Switch === true) return onGate;
+      return { ok: true, status: 200,
+        json: async () => ({ code: 0, data: { code: 0, msg: 'off' } }) };
+    }
+  });
+  const fetchImpl = async (url, options) => {
+    if (observeLateRecovery && (!options || options.method !== 'POST')) {
+      lateEvents.push({ type: 'get', url });
+    }
+    return baseFetch(url, options);
+  };
+  const harness = buildControlDom();
+  loadControlPage(harness, { iot_onenet_config: JSON.stringify(LEGACY_CFG) }, fetchImpl);
+  await flushAsync();
+
+  harness.els.txOnBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  await flushAsync();
+  harness.els.txOffBtn.dispatch('click');
+  for (let i = 0; i < 6; i++) await flushAsync();
+  assert.deepEqual(postBodies.map((body) => body.params.Switch), [true, false]);
+
+  observeLateRecovery = true;
+  releaseOn({ ok: true, status: 200,
+    json: async () => ({ code: 0, data: { code: 0, msg: 'late on' } }) });
+  for (let i = 0; i < 6; i++) await flushAsync();
+
+  const finalOff = lateEvents.some((event) =>
+    event.type === 'post' && event.body.params.Switch === false);
+  const verifiedAfterLateOn = lateEvents.some((event) => event.type === 'get');
+  assert.ok(finalOff || verifiedAfterLateOn,
+    '不能只忽略晚到 ON 回调；必须追加最终 OFF 或重新拉取设备状态确认安全');
+});
+
+test('R84 RX START 被 STOP 抢占后，晚到 START 必须触发最终 STOP 或设备状态复核', async () => {
+  const now = Date.now();
+  let releaseStart;
+  let observeLateRecovery = false;
+  const startGate = new Promise((resolve) => { releaseStart = resolve; });
+  const postBodies = [];
+  const lateEvents = [];
+  const baseFetch = controlFetch({
+    rxItems: () => rxGateOpenItems(now),
+    postImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      postBodies.push(body);
+      if (observeLateRecovery) lateEvents.push({ type: 'post', body });
+      if (body.params.RX_Command === 'START') return startGate;
+      return { ok: true, status: 200,
+        json: async () => ({ code: 0, data: { code: 0, msg: 'stopped' } }) };
+    }
+  });
+  const fetchImpl = async (url, options) => {
+    if (observeLateRecovery && (!options || options.method !== 'POST')) {
+      lateEvents.push({ type: 'get', url });
+    }
+    return baseFetch(url, options);
+  };
+  const harness = buildControlDom();
+  loadControlPage(harness, { iot_onenet_devices_v1: DUAL_CONFIG }, fetchImpl);
+  await flushAsync();
+
+  harness.els.rxStartBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  await flushAsync();
+  harness.els.rxStopBtn.dispatch('click');
+  for (let i = 0; i < 6; i++) await flushAsync();
+  assert.deepEqual(postBodies.map((body) => body.params.RX_Command), ['START', 'STOP']);
+
+  observeLateRecovery = true;
+  releaseStart({ ok: true, status: 200,
+    json: async () => ({ code: 0, data: { code: 0, msg: 'late start' } }) });
+  for (let i = 0; i < 6; i++) await flushAsync();
+
+  const finalStop = lateEvents.some((event) =>
+    event.type === 'post' && event.body.params.RX_Command === 'STOP');
+  const verifiedAfterLateStart = lateEvents.some((event) => event.type === 'get');
+  assert.ok(finalStop || verifiedAfterLateStart,
+    '不能只忽略晚到 START 回调；必须追加最终 STOP 或重新拉取设备状态确认安全');
 });
