@@ -9,9 +9,12 @@
     var pending = { tx: false, rx: false };
     var pendingCommand = { tx: null, rx: null };
     var commandGeneration = { tx: 0, rx: 0 };
-    var safetyStartedMs = { tx: 0, rx: 0 };
-    var safetySourceWatermark = { tx: null, rx: null };
-    var safetyPreemption = { tx: null, rx: null };
+    var MAX_AUTO_SAFETY_COMPENSATIONS = 1;
+    /* 安全状态与可清空操作日志完全分离；日志写失败时仍由此状态 fail-closed。 */
+    var commandSafetyState = {
+        tx: { danger: null, shutdown: null },
+        rx: { danger: null, shutdown: null }
+    };
     var pendingConfirm = null;
     var previousFocus = null;
     var lastSnapshot = {
@@ -42,40 +45,16 @@
         return typeof getOneNetConfig === 'function' ? getOneNetConfig(deviceKey) : null;
     }
 
-    /* OFF/STOP 抢占普通请求时记录两个请求的代际与完成顺序。若旧危险请求最后完成，
-     * 只补发一次幂等安全命令；若原安全命令最后完成，则其本身已保证最终顺序。 */
-    function rememberSafetyPreemption(deviceKey, dangerGeneration, safetyGeneration) {
-        safetyPreemption[deviceKey] = {
-            dangerGeneration: dangerGeneration,
-            safetyGeneration: safetyGeneration,
-            dangerSettled: false,
-            safetySettled: false
-        };
-    }
-
-    function notePreemptedDangerSettled(deviceKey, generation) {
-        var state = safetyPreemption[deviceKey];
-        if (!state || state.dangerGeneration !== generation) return;
-        state.dangerSettled = true;
-        if (!state.safetySettled) return;
-        /* 先清记录再补偿，保证补偿命令自身无论成功或失败都不会递归重试。 */
-        safetyPreemption[deviceKey] = null;
-        if (deviceKey === 'tx') executeTx('off', null, '旧危险请求晚到，补发最终 OFF');
-        else executeRx('STOP', null, '旧危险请求晚到，补发最终 STOP');
-    }
-
-    function noteSafetySettled(deviceKey, generation) {
-        var state = safetyPreemption[deviceKey];
-        if (!state || state.safetyGeneration !== generation) return;
-        state.safetySettled = true;
-        /* 旧请求先完成、安全命令后完成时，已有安全的最终设备顺序，无需重复下发。 */
-        if (state.dangerSettled) safetyPreemption[deviceKey] = null;
+    function isSafetyLatched(deviceKey) {
+        var state = commandSafetyState[deviceKey];
+        return !!(state && (state.danger || state.shutdown));
     }
 
     /* ---------- 渲染 ---------- */
 
     function txGateReason(perms) {
         if (pending.tx) return '命令执行中';
+        if (isSafetyLatched('tx')) return '等待危险命令与安全关断终态确认';
         if (!perms.configured) return '未配置云端连接，请前往设置';
         if (!perms.live) return '实时数据不可用，控制已禁用';
         if (perms.on) return '';
@@ -86,7 +65,7 @@
     }
 
     function rxGateReason(perms) {
-        if (pending.rx || hasPendingRxAudit()) return '等待上一条接收端命令确认';
+        if (pending.rx || hasPendingRxAudit() || isSafetyLatched('rx')) return '等待上一条接收端命令确认';
         if (!perms.configured) return '未配置云端连接，请前往设置';
         if (perms.start) return '';
         var reason = WptControlCore.getRxStartGateReason(lastSnapshot.rx.data);
@@ -112,7 +91,7 @@
             setText('txCurrentValue', live ? WptUi.formatMetric(data.current, 3, 'A') : '--');
             setText('txFrequencyValue', live ? WptUi.formatMetric(data.freq, 1, 'kHz') : '--');
             var txPerms = WptControlCore.getTxPermissions({ config: config, data: data, error: error,
-                pending: pending.tx, safetyLatched: safetyStartedMs.tx !== 0 });
+                pending: pending.tx, safetyLatched: isSafetyLatched('tx') });
             setText('txGateReason', txGateReason(txPerms));
             setDisabled('txOnBtn', !txPerms.on);
             setDisabled('txOffBtn', !txPerms.off);
@@ -123,7 +102,7 @@
             setText('rxValidValue', live ? (data.rx_valid === true ? '有效' : '无效') : '--');
             setText('rxFaultValue', live ? String(data.rx_fault_flags) : '--');
             var rxPerms = WptControlCore.getRxPermissions({ config: config, data: data, error: error,
-                pending: pending.rx || hasPendingRxAudit(), safetyLatched: safetyStartedMs.rx !== 0 });
+                pending: pending.rx || hasPendingRxAudit(), safetyLatched: isSafetyLatched('rx') });
             setText('rxGateReason', rxGateReason(rxPerms));
             setDisabled('rxStartBtn', !rxPerms.start);
             setDisabled('rxZeroBtn', !rxPerms.zero);
@@ -166,6 +145,7 @@
         Object.keys(base).forEach(function (key) { merged[key] = base[key]; });
         Object.keys(entry || {}).forEach(function (key) { merged[key] = entry[key]; });
         WptControlCore.appendOperationLog(merged);
+        return merged.id;
     }
 
     function resultLabel(entry) {
@@ -258,6 +238,233 @@
         });
     }
 
+    function joinAuditMessage(message, suffix) {
+        var base = String(message || '');
+        return (base ? base + ' · ' : '') + suffix;
+    }
+
+    function markDangerSuperseded(deviceKey, safetyCommand) {
+        var danger = commandSafetyState[deviceKey].danger;
+        if (!danger) return;
+        danger.supersededBy = safetyCommand;
+        WptControlCore.updateOperationLog(deviceKey, danger.logId, {
+            command: danger.command + '→' + safetyCommand,
+            supersededBy: safetyCommand,
+            message: joinAuditMessage(danger.message, '已被 ' + safetyCommand + ' 抢占，等待安全终态')
+        });
+    }
+
+    function beginDangerState(deviceKey, generation, command, requestedValue, auditBaseline, auditSourceWatermark) {
+        var id = logId();
+        var danger = {
+            generation: generation,
+            command: command,
+            requestedValue: requestedValue,
+            logId: id,
+            requestState: 'pending',
+            message: '',
+            supersededBy: null,
+            auditBaseline: auditBaseline,
+            auditSourceWatermark: auditSourceWatermark
+        };
+        /* 先建立内存锁，再尝试持久化；日志失败不得影响安全状态或放行后续危险命令。 */
+        commandSafetyState[deviceKey].danger = danger;
+        appendLog(deviceKey, {
+            id: id,
+            command: command,
+            requestedValue: requestedValue,
+            outcome: 'pending',
+            message: '等待平台结果',
+            auditBaseline: auditBaseline,
+            auditSourceWatermark: auditSourceWatermark
+        });
+        return danger;
+    }
+
+    function settleDangerState(deviceKey, generation, outcome) {
+        var state = commandSafetyState[deviceKey];
+        var danger = state.danger;
+        var cls;
+        var marker;
+        var late;
+        var message;
+        var shutdown;
+        if (!danger || danger.generation !== generation) return null;
+        cls = WptControlCore.classifyPropertyOutcome(outcome);
+        marker = danger.supersededBy;
+        shutdown = state.shutdown;
+        late = !!(marker && shutdown && shutdown.dangerGeneration === generation && shutdown.terminalTrusted);
+        message = String(outcome && outcome.message || '');
+        if (marker) {
+            message = joinAuditMessage(message,
+                (late ? '迟到终态，' : '') + '已被 ' + marker + ' 抢占');
+        }
+        danger.requestState = cls.outcome;
+        danger.message = message;
+        WptControlCore.updateOperationLog(deviceKey, danger.logId, {
+            command: marker ? danger.command + '→' + marker : danger.command,
+            outcome: cls.outcome,
+            accepted: !!(outcome && outcome.accepted),
+            confirmed: !!(outcome && outcome.confirmed),
+            deviceCode: outcome && outcome.deviceCode !== undefined ? outcome.deviceCode : null,
+            message: message,
+            requestId: String(outcome && outcome.requestId || ''),
+            supersededBy: marker || '',
+            lateSettlement: late,
+            auditOutcome: deviceKey === 'rx' && cls.outcome === 'accepted_only' ? 'pending' : undefined
+        });
+        if (!marker) {
+            /* accepted-only/传输未知仍可能在设备侧执行，必须保持独立危险锁。 */
+            if (cls.outcome === 'confirmed' || cls.outcome === 'device_rejected') state.danger = null;
+            return cls;
+        }
+        if (shutdown && shutdown.dangerGeneration === generation &&
+            shutdown.dangerPendingAtDispatch && shutdown.terminalTrusted) {
+            requestSafetyCompensation(deviceKey, '旧危险请求在安全关断后迟到');
+        }
+        return cls;
+    }
+
+    function beginShutdownState(deviceKey, generation, command, auditBaseline,
+        auditSourceWatermark, isCompensation) {
+        var state = commandSafetyState[deviceKey];
+        var previous = state.shutdown;
+        var danger = state.danger;
+        var count = isCompensation
+            ? (previous ? previous.compensationCount + 1 : 1) : 0;
+        if (danger) markDangerSuperseded(deviceKey, command);
+        state.shutdown = {
+            generation: generation,
+            command: command,
+            requestState: 'pending',
+            terminalTrusted: false,
+            sourceWatermark: currentSafetySourceTime(deviceKey),
+            terminalSourceWatermark: null,
+            compensationCount: count,
+            compensationScheduled: false,
+            compensationNeeded: false,
+            compensationReason: '',
+            dangerGeneration: danger ? danger.generation : null,
+            dangerPendingAtDispatch: !!(danger && danger.requestState === 'pending'),
+            auditBaseline: auditBaseline,
+            auditSourceWatermark: auditSourceWatermark
+        };
+    }
+
+    function settleShutdownState(deviceKey, generation, outcome) {
+        var shutdown = commandSafetyState[deviceKey].shutdown;
+        var cls;
+        var currentSource;
+        if (!shutdown || shutdown.generation !== generation) return null;
+        cls = WptControlCore.classifyPropertyOutcome(outcome);
+        shutdown.requestState = cls.outcome;
+        shutdown.terminalTrusted = !!(outcome && outcome.confirmed === true);
+        if (shutdown.terminalTrusted) {
+            currentSource = currentSafetySourceTime(deviceKey);
+            shutdown.terminalSourceWatermark = shutdown.sourceWatermark;
+            if (currentSource !== null && (shutdown.terminalSourceWatermark === null ||
+                currentSource > shutdown.terminalSourceWatermark)) {
+                shutdown.terminalSourceWatermark = currentSource;
+            }
+        }
+        return cls;
+    }
+
+    function requestSafetyCompensation(deviceKey, reason) {
+        var shutdown = commandSafetyState[deviceKey].shutdown;
+        if (!shutdown || shutdown.compensationScheduled ||
+            shutdown.compensationCount >= MAX_AUTO_SAFETY_COMPENSATIONS) return;
+        if (pending[deviceKey]) {
+            shutdown.compensationNeeded = true;
+            shutdown.compensationReason = reason;
+            return;
+        }
+        shutdown.compensationNeeded = false;
+        shutdown.compensationScheduled = true;
+        if (deviceKey === 'tx') executeTx('off', null, reason + '，补发最终 OFF', true);
+        else executeRx('STOP', null, reason + '，补发最终 STOP', true);
+    }
+
+    function flushDeferredSafetyCompensation(deviceKey) {
+        var shutdown = commandSafetyState[deviceKey].shutdown;
+        if (!shutdown || !shutdown.compensationNeeded) return;
+        requestSafetyCompensation(deviceKey,
+            shutdown.compensationReason || '危险请求迟到');
+    }
+
+    function observeRuntimeRxAudit(data) {
+        var state = commandSafetyState.rx;
+        var danger = state.danger;
+        var shutdown = state.shutdown;
+        var outcome;
+        var resultText = data && data.rx_command_result ? String(data.rx_command_result) : '';
+        if (danger && danger.auditBaseline !== null && danger.auditSourceWatermark !== null) {
+            outcome = getReceiverCommandOutcome(data, danger.auditBaseline,
+                danger.command, danger.auditSourceWatermark);
+            if (outcome.isNew && (outcome.outcome === 'success' || outcome.outcome === 'failed')) {
+                WptControlCore.updateOperationLog('rx', danger.logId, {
+                    auditOutcome: outcome.outcome,
+                    auditSequence: outcome.sequence,
+                    auditResult: resultText.slice(0, 160)
+                });
+                danger.requestState = outcome.outcome === 'success' ? 'confirmed' : 'device_rejected';
+                if (!danger.supersededBy) state.danger = null;
+            }
+        }
+        if (!shutdown || shutdown.terminalTrusted || shutdown.auditBaseline === null ||
+            shutdown.auditSourceWatermark === null) return;
+        outcome = getReceiverCommandOutcome(data, shutdown.auditBaseline,
+            shutdown.command, shutdown.auditSourceWatermark);
+        if (!outcome.isNew) return;
+        if (outcome.outcome === 'success') {
+            shutdown.requestState = 'confirmed';
+            shutdown.terminalTrusted = true;
+            shutdown.terminalSourceWatermark = currentSafetySourceTime('rx');
+            supersedePendingRxAudits(null);
+        } else if (outcome.outcome === 'failed') {
+            shutdown.requestState = 'device_rejected';
+        }
+    }
+
+    function observeSafetyTelemetry(deviceKey, data) {
+        var state = commandSafetyState[deviceKey];
+        var shutdown = state.shutdown;
+        var danger = state.danger;
+        var sourceTime;
+        var safe;
+        if (!shutdown || !shutdown.terminalTrusted || !data ||
+            data._isOnline !== true || data._isFresh !== true) return;
+        if (shutdown.compensationNeeded) {
+            requestSafetyCompensation(deviceKey,
+                shutdown.compensationReason || '危险请求迟到');
+            return;
+        }
+        if (danger && shutdown.dangerGeneration === danger.generation &&
+            danger.requestState === 'pending') return;
+        sourceTime = currentSafetySourceTime(deviceKey);
+        if (sourceTime === null || shutdown.terminalSourceWatermark === null ||
+            sourceTime <= shutdown.terminalSourceWatermark) return;
+        safe = deviceKey === 'tx'
+            ? (Number(data.state) === 0 || Number(data.state) === 3)
+            : data.rx_stim === false;
+        if (!safe) {
+            if (shutdown.dangerGeneration !== null) {
+                requestSafetyCompensation(deviceKey, '安全关断后检测到危险设备态');
+            }
+            return;
+        }
+        if (danger && shutdown.dangerGeneration === danger.generation) {
+            if (deviceKey === 'rx') {
+                WptControlCore.updateOperationLog('rx', danger.logId, {
+                    auditOutcome: 'failed', auditSequence: null,
+                    auditResult: '被安全 STOP 终态取代'
+                });
+            }
+            state.danger = null;
+        }
+        state.shutdown = null;
+    }
+
     function renderAuditDisplay() {
         var logs = WptControlCore.readOperationLogs();
         var entry = selectRxAuditEntry(logs);
@@ -322,13 +529,13 @@
         return false;
     }
 
-    function executeTx(type, frequency, safetyReason) {
+    function executeTx(type, frequency, safetyReason, isCompensation) {
         var deviceKey = 'tx';
         var command = txCommandLabel(type, frequency);
         var requestedValue = type === 'on' ? true : (type === 'off' ? false : frequency);
         var generation;
-        var preemptedGeneration = type === 'off' && pending.tx && pendingCommand.tx !== 'off'
-            ? commandGeneration.tx : 0;
+        var cls;
+        var message;
         /* 最终门控：以最新快照/配置/pending 复核；失败只写 blocked，不调用网络。 */
         var config = currentConfig('tx');
         var perms = WptControlCore.getTxPermissions({
@@ -336,7 +543,7 @@
             data: lastSnapshot.tx.data,
             error: lastSnapshot.tx.error,
             pending: pending.tx,
-            safetyLatched: safetyStartedMs.tx !== 0
+            safetyLatched: isSafetyLatched('tx')
         });
         var allowed = type === 'on' ? perms.on : (type === 'off' ? perms.off : perms.setfreq);
         if (!allowed) {
@@ -354,34 +561,39 @@
         }
         commandGeneration.tx++;
         generation = commandGeneration.tx;
-        if (preemptedGeneration !== 0) {
-            rememberSafetyPreemption('tx', preemptedGeneration, generation);
-        }
-        if (type === 'off') {
-            safetyStartedMs.tx = Date.now();
-            safetySourceWatermark.tx = currentSafetySourceTime('tx');
-        }
+        if (type === 'on') beginDangerState('tx', generation, command, requestedValue, null, null);
+        if (type === 'off') beginShutdownState('tx', generation, command, null, null, isCompensation === true);
         pending.tx = true;
         pendingCommand.tx = type;
         renderPermissions('tx');
         OneNetService.sendProperty(deviceKey, txParamsFor(type, frequency)).then(function (outcome) {
+            if (type === 'on') cls = settleDangerState('tx', generation, outcome);
+            else if (type === 'off') cls = settleShutdownState('tx', generation, outcome);
+            else cls = WptControlCore.classifyPropertyOutcome(outcome);
             if (generation !== commandGeneration.tx) return;
-            var cls = WptControlCore.classifyPropertyOutcome(outcome);
-            appendLog(deviceKey, {
-                command: command,
-                requestedValue: requestedValue,
-                outcome: cls.outcome,
-                accepted: !!outcome.accepted,
-                confirmed: !!outcome.confirmed,
-                deviceCode: outcome.deviceCode === undefined || outcome.deviceCode === null ? null : Number(outcome.deviceCode),
-                message: String(safetyReason || outcome.message || '').slice(0, 160),
-                requestId: String(outcome.requestId || '').slice(0, 128)
-            });
+            if (type !== 'on') {
+                message = safetyReason
+                    ? joinAuditMessage(outcome.message, safetyReason) : String(outcome.message || '');
+                appendLog(deviceKey, {
+                    command: command,
+                    requestedValue: requestedValue,
+                    outcome: cls.outcome,
+                    accepted: !!outcome.accepted,
+                    confirmed: !!outcome.confirmed,
+                    deviceCode: outcome.deviceCode === undefined || outcome.deviceCode === null ? null : Number(outcome.deviceCode),
+                    message: message.slice(0, 160),
+                    requestId: String(outcome.requestId || '').slice(0, 128)
+                });
+            }
             setStatus(cls.label);
             renderOperationLogs();
         }).catch(function () {
+            var failed = { accepted: false, confirmed: false, deviceCode: null,
+                message: '传输异常', requestId: '' };
+            if (type === 'on') settleDangerState('tx', generation, failed);
+            else if (type === 'off') settleShutdownState('tx', generation, failed);
             if (generation !== commandGeneration.tx) return;
-            appendLog(deviceKey, { command: command, requestedValue: requestedValue,
+            if (type !== 'on') appendLog(deviceKey, { command: command, requestedValue: requestedValue,
                 outcome: 'transport_failed', message: String(safetyReason || '传输异常').slice(0, 160) });
             setStatus('传输失败');
             renderOperationLogs();
@@ -390,10 +602,9 @@
                 pending.tx = false;
                 pendingCommand.tx = null;
                 renderPermissions('tx');
+                flushDeferredSafetyCompensation('tx');
                 if (poller) poller.runNow();
             }
-            if (type === 'off') noteSafetySettled('tx', generation);
-            else notePreemptedDangerSettled('tx', generation);
         });
     }
 
@@ -412,7 +623,7 @@
             data: lastSnapshot.tx.data,
             error: lastSnapshot.tx.error,
             pending: pending.tx,
-            safetyLatched: safetyStartedMs.tx !== 0
+            safetyLatched: isSafetyLatched('tx')
         });
         var allowed = type === 'on' ? perms.on : (type === 'off' ? perms.off : perms.setfreq);
         if (!allowed) {
@@ -491,14 +702,14 @@
         return null;
     }
 
-    function executeRx(command, rate, safetyReason) {
+    function executeRx(command, rate, safetyReason, isCompensation) {
         var deviceKey = 'rx';
         var type = rxCommandType(command);
         var generation;
         var commandStartedMs;
         var auditSourceWatermark;
-        var preemptedGeneration = type === 'stop' && pending.rx && pendingCommand.rx !== 'stop'
-            ? commandGeneration.rx : 0;
+        var cls;
+        var message;
         if (!type) return;
         /* 最终门控：以最新快照/配置/pending 复核，失败只写 blocked，不调用网络。 */
         var config = currentConfig('rx');
@@ -507,7 +718,7 @@
             data: lastSnapshot.rx.data,
             error: lastSnapshot.rx.error,
             pending: pending.rx || hasPendingRxAudit(),
-            safetyLatched: safetyStartedMs.rx !== 0
+            safetyLatched: isSafetyLatched('rx')
         });
         var allowed = (type === 'start' || type === 'zero') ? perms.start
             : (type === 'rate' ? perms.rate : (type === 'stop' ? perms.stop : perms.status));
@@ -544,43 +755,53 @@
         commandStartedMs = Date.now();
         commandGeneration.rx++;
         generation = commandGeneration.rx;
-        if (preemptedGeneration !== 0) {
-            rememberSafetyPreemption('rx', preemptedGeneration, generation);
+        if (type === 'start') {
+            beginDangerState('rx', generation, command, rate, baseline, auditSourceWatermark);
         }
         if (type === 'stop') {
-            safetyStartedMs.rx = Date.now();
-            safetySourceWatermark.rx = currentSafetySourceTime('rx');
+            beginShutdownState('rx', generation, command, baseline,
+                auditSourceWatermark, isCompensation === true);
         }
         pending.rx = true;
         pendingCommand.rx = type;
         renderPermissions('rx');
         OneNetService.sendProperty(deviceKey, { command: command }).then(function (outcome) {
-            if (generation !== commandGeneration.rx) return;
-            var cls = WptControlCore.classifyPropertyOutcome(outcome);
+            if (type === 'start') cls = settleDangerState('rx', generation, outcome);
+            else if (type === 'stop') cls = settleShutdownState('rx', generation, outcome);
+            else cls = WptControlCore.classifyPropertyOutcome(outcome);
             if (type === 'stop' && outcome.confirmed === true) supersedePendingRxAudits(null);
-            appendLog(deviceKey, {
-                command: command,
-                timestamp: commandStartedMs,
-                requestedValue: rate,
-                outcome: cls.outcome,
-                accepted: !!outcome.accepted,
-                confirmed: !!outcome.confirmed,
-                deviceCode: outcome.deviceCode === undefined || outcome.deviceCode === null ? null : Number(outcome.deviceCode),
-                message: String(safetyReason || outcome.message || '').slice(0, 160),
-                requestId: String(outcome.requestId || '').slice(0, 128),
-                auditBaseline: baseline,
-                auditSourceWatermark: auditSourceWatermark,
-                auditOutcome: baseline !== null && auditSourceWatermark !== null &&
-                    outcome.accepted === true && outcome.confirmed !== true &&
-                    (outcome.deviceCode === null || outcome.deviceCode === undefined) ? 'pending' : null,
-                auditSequence: null,
-                auditResult: ''
-            });
+            if (generation !== commandGeneration.rx) return;
+            if (type !== 'start') {
+                message = safetyReason
+                    ? joinAuditMessage(outcome.message, safetyReason) : String(outcome.message || '');
+                appendLog(deviceKey, {
+                    command: command,
+                    timestamp: commandStartedMs,
+                    requestedValue: rate,
+                    outcome: cls.outcome,
+                    accepted: !!outcome.accepted,
+                    confirmed: !!outcome.confirmed,
+                    deviceCode: outcome.deviceCode === undefined || outcome.deviceCode === null ? null : Number(outcome.deviceCode),
+                    message: message.slice(0, 160),
+                    requestId: String(outcome.requestId || '').slice(0, 128),
+                    auditBaseline: baseline,
+                    auditSourceWatermark: auditSourceWatermark,
+                    auditOutcome: baseline !== null && auditSourceWatermark !== null &&
+                        outcome.accepted === true && outcome.confirmed !== true &&
+                        (outcome.deviceCode === null || outcome.deviceCode === undefined) ? 'pending' : null,
+                    auditSequence: null,
+                    auditResult: ''
+                });
+            }
             setStatus(cls.label);
             renderOperationLogs();
         }).catch(function () {
+            var failed = { accepted: false, confirmed: false, deviceCode: null,
+                message: '传输异常', requestId: '' };
+            if (type === 'start') settleDangerState('rx', generation, failed);
+            else if (type === 'stop') settleShutdownState('rx', generation, failed);
             if (generation !== commandGeneration.rx) return;
-            appendLog(deviceKey, { command: command, timestamp: commandStartedMs,
+            if (type !== 'start') appendLog(deviceKey, { command: command, timestamp: commandStartedMs,
                 requestedValue: rate, outcome: 'transport_failed',
                 message: String(safetyReason || '传输异常').slice(0, 160), auditBaseline: baseline });
             setStatus('传输失败');
@@ -590,10 +811,9 @@
                 pending.rx = false;
                 pendingCommand.rx = null;
                 renderPermissions('rx');
+                flushDeferredSafetyCompensation('rx');
                 if (poller) poller.runNow();
             }
-            if (type === 'stop') noteSafetySettled('rx', generation);
-            else notePreemptedDangerSettled('rx', generation);
         });
     }
 
@@ -611,7 +831,7 @@
             data: lastSnapshot.rx.data,
             error: lastSnapshot.rx.error,
             pending: pending.rx || hasPendingRxAudit(),
-            safetyLatched: safetyStartedMs.rx !== 0
+            safetyLatched: isSafetyLatched('rx')
         });
         var allowed = type === 'start' ? perms.start : (type === 'zero' ? perms.zero : (type === 'rate' ? perms.rate : (type === 'stop' ? perms.stop : perms.status)));
         var command = rxCommandValue(type);
@@ -652,33 +872,6 @@
         return Number.isFinite(sourceTime) && Number.isInteger(sourceTime) ? sourceTime : null;
     }
 
-    function clearConfirmedSafetyLatch(deviceKey, data) {
-        var sourceTime;
-        var watermark;
-
-        if (!data || data._isOnline !== true || data._isFresh !== true ||
-            safetyPreemption[deviceKey] !== null ||
-            safetyStartedMs[deviceKey] === 0) return;
-        if (deviceKey === 'tx') {
-            sourceTime = Number(data._propertyTimes && data._propertyTimes.S);
-            watermark = safetySourceWatermark.tx;
-            if (Number.isFinite(sourceTime) && Number.isInteger(sourceTime) &&
-                (watermark === null || sourceTime > watermark) &&
-                (Number(data.state) === 0 || Number(data.state) === 3)) {
-                safetyStartedMs.tx = 0;
-                safetySourceWatermark.tx = null;
-            }
-            return;
-        }
-        sourceTime = Number(data._propertyTimes && data._propertyTimes.RX_Stim);
-        watermark = safetySourceWatermark.rx;
-        if (Number.isFinite(sourceTime) && Number.isInteger(sourceTime) &&
-            (watermark === null || sourceTime > watermark) && data.rx_stim === false) {
-            safetyStartedMs.rx = 0;
-            safetySourceWatermark.rx = null;
-        }
-    }
-
     async function syncAll() {
         var settled = await Promise.allSettled([
             OneNetService.getLatestData('tx'),
@@ -690,7 +883,8 @@
                 data: result.status === 'fulfilled' ? result.value : null,
                 error: result.status === 'rejected' ? result.reason : null
             };
-            clearConfirmedSafetyLatch(deviceKey, lastSnapshot[deviceKey].data);
+            if (deviceKey === 'rx') observeRuntimeRxAudit(lastSnapshot.rx.data);
+            observeSafetyTelemetry(deviceKey, lastSnapshot[deviceKey].data);
             renderEndpoint(deviceKey, lastSnapshot[deviceKey].data, lastSnapshot[deviceKey].error);
         });
         updateRxAudit();

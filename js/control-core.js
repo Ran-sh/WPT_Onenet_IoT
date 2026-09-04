@@ -11,14 +11,16 @@ var WptControlCore = (function () {
     var LIVE_MAX_FUTURE_MS = 60000;
     var LOG_LIMIT = 100;
     var LOG_KEY = 'iot_operation_logs_v2';
+    var SAFETY_STATE_KEY = 'iot_control_safety_v1';
     var OUTCOME_LABELS = {
+        pending: '等待平台结果',
         blocked: '本地拦截',
         transport_failed: '传输失败',
         accepted_only: '平台已受理，设备未确认',
         device_rejected: '设备已拒绝',
         confirmed: '设备已确认执行'
     };
-    var LOG_OUTCOMES = ['blocked', 'transport_failed', 'accepted_only', 'device_rejected', 'confirmed'];
+    var LOG_OUTCOMES = ['pending', 'blocked', 'transport_failed', 'accepted_only', 'device_rejected', 'confirmed'];
     var AUDIT_OUTCOMES = ['pending', 'success', 'failed'];
 
     function hasConfig(config) {
@@ -105,6 +107,9 @@ var WptControlCore = (function () {
 
     /* 下发结果分类：confirmed 才叫确认；accepted 分设备拒绝/平台受理。 */
     function classifyPropertyOutcome(result) {
+        if (result && result.outcome === 'pending') {
+            return { outcome: 'pending', label: OUTCOME_LABELS.pending };
+        }
         if (result && result.outcome === 'blocked') {
             return { outcome: 'blocked', label: OUTCOME_LABELS.blocked };
         }
@@ -165,6 +170,9 @@ var WptControlCore = (function () {
             deviceCode: deviceCode,
             message: sanitizeText(raw.message, 160),
             requestId: sanitizeText(raw.requestId, 128),
+            supersededBy: raw.supersededBy === 'OFF' || raw.supersededBy === 'STOP'
+                ? raw.supersededBy : '',
+            lateSettlement: raw.lateSettlement === true,
             auditBaseline: auditBaseline,
             auditSourceWatermark: auditSourceWatermark,
             auditOutcome: auditOutcome,
@@ -218,6 +226,21 @@ var WptControlCore = (function () {
             found = true;
             var merged = Object.assign({}, entry);
             if (patch && typeof patch === 'object') {
+                if (patch.command !== undefined) merged.command = sanitizeText(patch.command, 32) || merged.command;
+                if (patch.outcome !== undefined && LOG_OUTCOMES.indexOf(patch.outcome) !== -1) merged.outcome = patch.outcome;
+                if (patch.accepted !== undefined) merged.accepted = patch.accepted === true;
+                if (patch.confirmed !== undefined) merged.confirmed = patch.confirmed === true;
+                if (patch.deviceCode !== undefined) {
+                    var code = patch.deviceCode === null ? null : Number(patch.deviceCode);
+                    if (code === null || Number.isFinite(code)) merged.deviceCode = code;
+                }
+                if (patch.message !== undefined) merged.message = sanitizeText(patch.message, 160);
+                if (patch.requestId !== undefined) merged.requestId = sanitizeText(patch.requestId, 128);
+                if (patch.supersededBy !== undefined) {
+                    merged.supersededBy = patch.supersededBy === 'OFF' || patch.supersededBy === 'STOP'
+                        ? patch.supersededBy : merged.supersededBy;
+                }
+                if (patch.lateSettlement !== undefined) merged.lateSettlement = patch.lateSettlement === true;
                 if (patch.auditOutcome !== undefined) {
                     merged.auditOutcome = AUDIT_OUTCOMES.indexOf(patch.auditOutcome) !== -1 ? patch.auditOutcome : merged.auditOutcome;
                 }
@@ -237,6 +260,38 @@ var WptControlCore = (function () {
         return writeOperationLogs([]);
     }
 
+    /* 安全状态使用独立存储键，清空操作日志不会触碰；读写异常由页面保持故障锁。 */
+    function readCommandSafetyState() {
+        var text;
+        var value;
+        try {
+            if (typeof localStorage === 'undefined') return { ok: false, value: null };
+            text = localStorage.getItem(SAFETY_STATE_KEY);
+            if (text === null) return { ok: true, value: null };
+            if (typeof text !== 'string' || text.length > 8192) return { ok: false, value: null };
+            value = JSON.parse(text);
+            if (!value || typeof value !== 'object' || value.version !== 1) {
+                return { ok: false, value: null };
+            }
+            return { ok: true, value: value };
+        } catch (e) {
+            return { ok: false, value: null };
+        }
+    }
+
+    function writeCommandSafetyState(value) {
+        var text;
+        try {
+            if (typeof localStorage === 'undefined' || !value || typeof value !== 'object') return false;
+            text = JSON.stringify(value);
+            if (text.length > 8192) return false;
+            localStorage.setItem(SAFETY_STATE_KEY, text);
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
     return {
         validateTxFrequency: validateTxFrequency,
         validateRate: validateRate,
@@ -247,6 +302,8 @@ var WptControlCore = (function () {
         readOperationLogs: readOperationLogs,
         appendOperationLog: appendOperationLog,
         updateOperationLog: updateOperationLog,
-        clearOperationLogs: clearOperationLogs
+        clearOperationLogs: clearOperationLogs,
+        readCommandSafetyState: readCommandSafetyState,
+        writeCommandSafetyState: writeCommandSafetyState
     };
 })();
