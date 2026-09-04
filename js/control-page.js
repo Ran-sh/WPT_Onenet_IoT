@@ -50,6 +50,48 @@
         return !!(state && (state.danger || state.shutdown));
     }
 
+    function recoveryDanger(deviceKey) {
+        return {
+            generation: 0,
+            command: deviceKey === 'tx' ? 'ON' : 'START',
+            requestedValue: null,
+            logId: '',
+            requestState: 'recovery_required',
+            message: '页面刷新后需重新确认安全关断',
+            supersededBy: null,
+            auditBaseline: null,
+            auditSourceWatermark: null
+        };
+    }
+
+    function persistSafetyState() {
+        return WptControlCore.writeCommandSafetyState({
+            version: 1,
+            tx: { latched: isSafetyLatched('tx') },
+            rx: { latched: isSafetyLatched('rx') }
+        });
+    }
+
+    function restoreSafetyState() {
+        var stored = WptControlCore.readCommandSafetyState();
+        var value;
+        if (!stored.ok) {
+            commandSafetyState.tx.danger = recoveryDanger('tx');
+            commandSafetyState.rx.danger = recoveryDanger('rx');
+            return;
+        }
+        value = stored.value;
+        if (value === null) return;
+        if (!value.tx || !value.rx || typeof value.tx.latched !== 'boolean' ||
+            typeof value.rx.latched !== 'boolean') {
+            commandSafetyState.tx.danger = recoveryDanger('tx');
+            commandSafetyState.rx.danger = recoveryDanger('rx');
+            return;
+        }
+        if (value.tx.latched) commandSafetyState.tx.danger = recoveryDanger('tx');
+        if (value.rx.latched) commandSafetyState.rx.danger = recoveryDanger('rx');
+    }
+
     /* ---------- 渲染 ---------- */
 
     function txGateReason(perms) {
@@ -252,6 +294,7 @@
             supersededBy: safetyCommand,
             message: joinAuditMessage(danger.message, '已被 ' + safetyCommand + ' 抢占，等待安全终态')
         });
+        persistSafetyState();
     }
 
     function beginDangerState(deviceKey, generation, command, requestedValue, auditBaseline, auditSourceWatermark) {
@@ -278,6 +321,15 @@
             auditBaseline: auditBaseline,
             auditSourceWatermark: auditSourceWatermark
         });
+        if (!persistSafetyState()) {
+            danger.requestState = 'storage_failed';
+            danger.message = '独立安全状态无法持久化，危险命令未发送';
+            WptControlCore.updateOperationLog(deviceKey, id, {
+                outcome: 'blocked',
+                message: danger.message
+            });
+            return null;
+        }
         return danger;
     }
 
@@ -316,8 +368,10 @@
         if (!marker) {
             /* accepted-only/传输未知仍可能在设备侧执行，必须保持独立危险锁。 */
             if (cls.outcome === 'confirmed' || cls.outcome === 'device_rejected') state.danger = null;
+            persistSafetyState();
             return cls;
         }
+        persistSafetyState();
         if (shutdown && shutdown.dangerGeneration === generation &&
             shutdown.dangerPendingAtDispatch && shutdown.terminalTrusted) {
             requestSafetyCompensation(deviceKey, '旧危险请求在安全关断后迟到');
@@ -349,6 +403,7 @@
             auditBaseline: auditBaseline,
             auditSourceWatermark: auditSourceWatermark
         };
+        persistSafetyState();
     }
 
     function settleShutdownState(deviceKey, generation, outcome) {
@@ -367,6 +422,7 @@
                 shutdown.terminalSourceWatermark = currentSource;
             }
         }
+        persistSafetyState();
         return cls;
     }
 
@@ -377,10 +433,12 @@
         if (pending[deviceKey]) {
             shutdown.compensationNeeded = true;
             shutdown.compensationReason = reason;
+            persistSafetyState();
             return;
         }
         shutdown.compensationNeeded = false;
         shutdown.compensationScheduled = true;
+        persistSafetyState();
         if (deviceKey === 'tx') executeTx('off', null, reason + '，补发最终 OFF', true);
         else executeRx('STOP', null, reason + '，补发最终 STOP', true);
     }
@@ -409,6 +467,7 @@
                 });
                 danger.requestState = outcome.outcome === 'success' ? 'confirmed' : 'device_rejected';
                 if (!danger.supersededBy) state.danger = null;
+                persistSafetyState();
             }
         }
         if (!shutdown || shutdown.terminalTrusted || shutdown.auditBaseline === null ||
@@ -424,6 +483,7 @@
         } else if (outcome.outcome === 'failed') {
             shutdown.requestState = 'device_rejected';
         }
+        persistSafetyState();
     }
 
     function observeSafetyTelemetry(deviceKey, data) {
@@ -463,6 +523,7 @@
             state.danger = null;
         }
         state.shutdown = null;
+        persistSafetyState();
     }
 
     function renderAuditDisplay() {
@@ -561,7 +622,12 @@
         }
         commandGeneration.tx++;
         generation = commandGeneration.tx;
-        if (type === 'on') beginDangerState('tx', generation, command, requestedValue, null, null);
+        if (type === 'on' && !beginDangerState('tx', generation, command, requestedValue, null, null)) {
+            setStatus('已拦截：独立安全状态无法持久化');
+            renderPermissions('tx');
+            renderOperationLogs();
+            return;
+        }
         if (type === 'off') beginShutdownState('tx', generation, command, null, null, isCompensation === true);
         pending.tx = true;
         pendingCommand.tx = type;
@@ -756,7 +822,12 @@
         commandGeneration.rx++;
         generation = commandGeneration.rx;
         if (type === 'start') {
-            beginDangerState('rx', generation, command, rate, baseline, auditSourceWatermark);
+            if (!beginDangerState('rx', generation, command, rate, baseline, auditSourceWatermark)) {
+                setStatus('已拦截：独立安全状态无法持久化');
+                renderPermissions('rx');
+                renderOperationLogs();
+                return;
+            }
         }
         if (type === 'stop') {
             beginShutdownState('rx', generation, command, baseline,
@@ -925,6 +996,7 @@
     /* ---------- 初始化 ---------- */
 
     function init() {
+        restoreSafetyState();
         if (typeof WptUi !== 'undefined' && typeof WptUi.markActiveNavigation === 'function') {
             WptUi.markActiveNavigation();
         }
