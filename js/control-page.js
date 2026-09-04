@@ -416,7 +416,10 @@
         shutdown.terminalTrusted = !!(outcome && outcome.confirmed === true);
         if (shutdown.terminalTrusted) {
             currentSource = currentSafetySourceTime(deviceKey);
-            shutdown.terminalSourceWatermark = shutdown.sourceWatermark;
+            /* 离线关断前可能没有任何源时间；0 只作为“尚无旧样本”下界，
+             * 后续仍必须由在线且新鲜的真实属性源时间推进才能解锁。 */
+            shutdown.terminalSourceWatermark = shutdown.sourceWatermark === null
+                ? 0 : shutdown.sourceWatermark;
             if (currentSource !== null && (shutdown.terminalSourceWatermark === null ||
                 currentSource > shutdown.terminalSourceWatermark)) {
                 shutdown.terminalSourceWatermark = currentSource;
