@@ -5779,3 +5779,367 @@ test('R87 STOP 未获设备确认不得提前取代旧 RX 审计，确认后才�
   assert.equal(oldEntry.auditOutcome, 'failed');
   assert.match(oldEntry.auditResult, /STOP/);
 });
+
+test('R88a RX accepted-only 危险锁不依赖操作日志写入成功', async () => {
+  const now = Date.now();
+  const durable = new Map([['iot_onenet_devices_v1', DUAL_CONFIG]]);
+  const failingLogStorage = {
+    getItem: (key) => durable.has(key) ? durable.get(key) : null,
+    setItem: (key, value) => {
+      if (key === 'iot_operation_logs_v2') throw new Error('quota');
+      durable.set(key, String(value));
+    },
+    removeItem: (key) => durable.delete(key)
+  };
+  let startPosts = 0;
+  const harness = buildControlDom();
+  loadControlPage(harness, {}, controlFetch({
+    rxItems: () => rxGateOpenItems(now),
+    postImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      if (body.params.RX_Command === 'START') startPosts++;
+      return { ok: true, status: 200,
+        json: async () => ({ code: 0, request_id: 'start-accepted-only', msg: 'queued', data: {} }) };
+    }
+  }), { localStorage: failingLogStorage });
+  await flushAsync();
+
+  harness.els.rxStartBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  for (let i = 0; i < 5; i++) await flushAsync();
+  assert.equal(startPosts, 1);
+  assert.equal(durable.has('iot_operation_logs_v2'), false);
+  assert.equal(harness.els.rxStartBtn.disabled, true,
+    '日志写失败不能清除 accepted-only START 的独立危险待确认锁');
+
+  harness.els.rxStartBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  for (let i = 0; i < 3; i++) await flushAsync();
+  assert.equal(startPosts, 1, '独立危险锁必须在最终门控再次拦截 START');
+});
+
+test('R88b 清空操作日志不能清除 RX accepted-only 危险待确认锁', async () => {
+  const now = Date.now();
+  let startPosts = 0;
+  const harness = buildControlDom();
+  const { storage } = loadControlPage(harness, {
+    iot_onenet_devices_v1: DUAL_CONFIG
+  }, controlFetch({
+    rxItems: () => rxGateOpenItems(now),
+    postImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      if (body.params.RX_Command === 'START') startPosts++;
+      return { ok: true, status: 200,
+        json: async () => ({ code: 0, request_id: 'start-before-clear', msg: 'queued', data: {} }) };
+    }
+  }));
+  await flushAsync();
+  harness.els.rxStartBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  for (let i = 0; i < 5; i++) await flushAsync();
+  assert.equal(startPosts, 1);
+  assert.ok(JSON.parse(storage.get('iot_operation_logs_v2')).some((entry) => entry.command === 'START'));
+
+  harness.els.clearOperationLogsBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  harness.els.controlSyncBtn.dispatch('click');
+  for (let i = 0; i < 5; i++) await flushAsync();
+  assert.deepEqual(JSON.parse(storage.get('iot_operation_logs_v2')), []);
+  assert.equal(harness.els.rxStartBtn.disabled, true,
+    '用户清空审计展示数据不能解锁尚无设备终态的 START');
+
+  harness.els.rxStartBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  for (let i = 0; i < 3; i++) await flushAsync();
+  assert.equal(startPosts, 1);
+});
+
+test('R89 被 OFF 抢占的 ON 先建审计，迟到终态保留真实平台结果与抢占标记', async () => {
+  const now = Date.now();
+  let releaseOn;
+  const onGate = new Promise((resolve) => { releaseOn = resolve; });
+  const harness = buildControlDom();
+  const { storage } = loadControlPage(harness, {
+    iot_onenet_config: JSON.stringify(LEGACY_CFG)
+  }, controlFetch({
+    txItems: () => fullTxItems(now).map((item) =>
+      item.identifier === 'S' ? { ...item, value: 0 } : item),
+    postImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      if (body.params.Switch === true) return onGate;
+      return { ok: true, status: 200,
+        json: async () => ({ code: 0, request_id: 'off-primary', data: { code: 0, msg: 'off' } }) };
+    }
+  }));
+  await flushAsync();
+  harness.els.txOnBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  await flushAsync();
+
+  let logs = JSON.parse(storage.get('iot_operation_logs_v2') || '[]');
+  const pendingOn = logs.find((entry) => entry.command === 'ON');
+  assert.ok(pendingOn, '危险 POST 发出前必须先持久化 ON 审计');
+  const pendingId = pendingOn.id;
+
+  harness.els.txOffBtn.dispatch('click');
+  for (let i = 0; i < 4; i++) await flushAsync();
+  releaseOn({ ok: true, status: 200,
+    json: async () => ({ code: 0, request_id: 'on-late-real-id', data: { code: 0, msg: 'device on late' } }) });
+  for (let i = 0; i < 8; i++) await flushAsync();
+
+  logs = JSON.parse(storage.get('iot_operation_logs_v2') || '[]');
+  const settledOn = logs.find((entry) => entry.id === pendingId);
+  assert.ok(settledOn);
+  assert.equal(settledOn.requestId, 'on-late-real-id');
+  assert.equal(settledOn.accepted, true);
+  assert.equal(settledOn.confirmed, true);
+  assert.match(JSON.stringify(settledOn), /OFF|抢占|迟到/,
+    'ON 迟到终态必须在原审计上标记已被 OFF 抢占');
+});
+
+test('R90 被 STOP 抢占的 START 先建审计，迟到终态保留真实平台结果与抢占标记', async () => {
+  const now = Date.now();
+  let releaseStart;
+  const startGate = new Promise((resolve) => { releaseStart = resolve; });
+  const harness = buildControlDom();
+  const { storage } = loadControlPage(harness, {
+    iot_onenet_devices_v1: DUAL_CONFIG
+  }, controlFetch({
+    rxItems: () => rxGateOpenItems(now),
+    postImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      if (body.params.RX_Command === 'START') return startGate;
+      return { ok: true, status: 200,
+        json: async () => ({ code: 0, request_id: 'stop-primary', data: { code: 0, msg: 'stopped' } }) };
+    }
+  }));
+  await flushAsync();
+  harness.els.rxStartBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  await flushAsync();
+
+  let logs = JSON.parse(storage.get('iot_operation_logs_v2') || '[]');
+  const pendingStart = logs.find((entry) => entry.command === 'START');
+  assert.ok(pendingStart, '危险 POST 发出前必须先持久化 START 审计');
+  const pendingId = pendingStart.id;
+
+  harness.els.rxStopBtn.dispatch('click');
+  for (let i = 0; i < 4; i++) await flushAsync();
+  releaseStart({ ok: true, status: 200,
+    json: async () => ({ code: 0, request_id: 'start-late-real-id', data: { code: 0, msg: 'started late' } }) });
+  for (let i = 0; i < 8; i++) await flushAsync();
+
+  logs = JSON.parse(storage.get('iot_operation_logs_v2') || '[]');
+  const settledStart = logs.find((entry) => entry.id === pendingId);
+  assert.ok(settledStart);
+  assert.equal(settledStart.requestId, 'start-late-real-id');
+  assert.equal(settledStart.accepted, true);
+  assert.equal(settledStart.confirmed, true);
+  assert.match(JSON.stringify(settledStart), /STOP|抢占|迟到/,
+    'START 迟到终态必须在原审计上标记已被 STOP 抢占');
+});
+
+test('R91 ON 已 accepted-only 后 OFF 仍追踪晚到设备态并有界补偿到真实安全', async () => {
+  const now = Date.now();
+  const source0 = now - 3000;
+  const source1 = now - 2000;
+  const source2 = now - 1000;
+  let phase = 'idle';
+  let offPosts = 0;
+  const txItems = () => fullTxItems(now).map((item) => {
+    if (item.identifier !== 'S') return item;
+    if (phase === 'unsafe-after-off') return { ...item, value: 2, time: source1 };
+    if (phase === 'safe-after-compensation') return { ...item, value: 0, time: source2 };
+    return { ...item, value: 0, time: source0 };
+  });
+  const harness = buildControlDom();
+  loadControlPage(harness, {
+    iot_onenet_config: JSON.stringify(LEGACY_CFG)
+  }, controlFetch({
+    txItems,
+    postImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      if (body.params.Switch === true) {
+        return { ok: true, status: 200,
+          json: async () => ({ code: 0, request_id: 'on-queued', msg: 'queued', data: {} }) };
+      }
+      offPosts++;
+      phase = offPosts === 1 ? 'unsafe-after-off' : 'safe-after-compensation';
+      return { ok: true, status: 200,
+        json: async () => ({ code: 0, request_id: 'off-' + offPosts, data: { code: 0, msg: 'off' } }) };
+    }
+  }));
+  await flushAsync();
+  harness.els.txOnBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  for (let i = 0; i < 5; i++) await flushAsync();
+  harness.els.txOffBtn.dispatch('click');
+  for (let i = 0; i < 12; i++) await flushAsync();
+
+  assert.equal(offPosts, 2,
+    'ON accepted-only 后出现更新的运行态，必须且只需再补一次最终 OFF');
+  assert.equal(harness.els.txStateValue.textContent, '待机');
+  assert.equal(harness.els.txOnBtn.disabled, false,
+    '只有补偿确认且新源时间遥测为安全态后才可解除危险锁');
+});
+
+test('R92 START 已 accepted-only 后 STOP 仍追踪晚到刺激态并有界补偿到真实安全', async () => {
+  const now = Date.now();
+  const source0 = now - 3000;
+  const source1 = now - 2000;
+  const source2 = now - 1000;
+  let phase = 'ready';
+  let stopPosts = 0;
+  const rxItems = () => {
+    const source = phase === 'safe-after-compensation' ? source2
+      : (phase === 'unsafe-after-stop' ? source1 : source0);
+    const items = rxGateOpenItems(now)
+      .filter((item) => item.identifier !== 'RX_CommandSequence')
+      .map((item) => item.identifier === 'RX_Stim'
+        ? { ...item, value: phase === 'unsafe-after-stop', time: source }
+        : item);
+    if (phase === 'unsafe-after-stop') {
+      return items.concat([
+        { identifier: 'RX_Command', value: 'START', data_type: 'string', time: source1 },
+        { identifier: 'RX_CommandResult', value: 'READY:START accepted:F=0000', data_type: 'string', time: source1 },
+        { identifier: 'RX_CommandSequence', value: 1, data_type: 'int32', time: source1 }
+      ]);
+    }
+    if (phase === 'safe-after-compensation') {
+      return items.concat([
+        { identifier: 'RX_Command', value: 'STOP', data_type: 'string', time: source2 },
+        { identifier: 'RX_CommandResult', value: 'READY:stopped; fault cleared:F=0000', data_type: 'string', time: source2 },
+        { identifier: 'RX_CommandSequence', value: 2, data_type: 'int32', time: source2 }
+      ]);
+    }
+    return items.concat([
+      { identifier: 'RX_CommandSequence', value: 0, data_type: 'int32', time: source0 }
+    ]);
+  };
+  const harness = buildControlDom();
+  loadControlPage(harness, {
+    iot_onenet_devices_v1: DUAL_CONFIG
+  }, controlFetch({
+    rxItems,
+    postImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      if (body.params.RX_Command === 'START') {
+        return { ok: true, status: 200,
+          json: async () => ({ code: 0, request_id: 'start-queued', msg: 'queued', data: {} }) };
+      }
+      stopPosts++;
+      phase = stopPosts === 1 ? 'unsafe-after-stop' : 'safe-after-compensation';
+      return { ok: true, status: 200,
+        json: async () => ({ code: 0, request_id: 'stop-' + stopPosts, data: { code: 0, msg: 'stopped' } }) };
+    }
+  }));
+  await flushAsync();
+  harness.els.rxStartBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  for (let i = 0; i < 5; i++) await flushAsync();
+  harness.els.rxStopBtn.dispatch('click');
+  for (let i = 0; i < 12; i++) await flushAsync();
+
+  assert.equal(stopPosts, 2,
+    'START accepted-only 后出现更新的刺激态，必须且只需再补一次最终 STOP');
+  assert.equal(harness.els.rxStateValue.textContent, '就绪');
+  assert.equal(harness.els.rxStartBtn.disabled, false,
+    '只有补偿确认且新源时间 RX_Stim=false 后才可解除危险锁');
+});
+
+test('R93 补偿 pending/accepted-only 时旧 GET 与新安全遥测都不能单独解锁', async () => {
+  const now = Date.now();
+  const source0 = now - 3000;
+  const source1 = now - 2000;
+  const source2 = now - 1000;
+  let sourcePhase = 'old';
+  let allowTrustedOff = false;
+  let releaseFirstOff;
+  let offPosts = 0;
+  const firstOffGate = new Promise((resolve) => { releaseFirstOff = resolve; });
+  const txItems = () => fullTxItems(now).map((item) => {
+    if (item.identifier !== 'S') return item;
+    const time = sourcePhase === 'trusted' ? source2 : (sourcePhase === 'new-safe' ? source1 : source0);
+    return { ...item, value: 0, time };
+  });
+  const harness = buildControlDom();
+  loadControlPage(harness, {
+    iot_onenet_config: JSON.stringify(LEGACY_CFG)
+  }, controlFetch({
+    txItems,
+    postImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      if (body.params.Switch === true) {
+        return { ok: true, status: 200,
+          json: async () => ({ code: 0, request_id: 'on-unresolved', msg: 'queued', data: {} }) };
+      }
+      offPosts++;
+      if (offPosts === 1) return firstOffGate;
+      if (!allowTrustedOff) {
+        return { ok: true, status: 200,
+          json: async () => ({ code: 0, request_id: 'off-untrusted-' + offPosts, msg: 'queued', data: {} }) };
+      }
+      sourcePhase = 'trusted';
+      return { ok: true, status: 200,
+        json: async () => ({ code: 0, request_id: 'off-trusted', data: { code: 0, msg: 'off' } }) };
+    }
+  }));
+  await flushAsync();
+  harness.els.txOnBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  for (let i = 0; i < 4; i++) await flushAsync();
+  harness.els.txOffBtn.dispatch('click');
+  await flushAsync();
+
+  harness.els.controlSyncBtn.dispatch('click');
+  for (let i = 0; i < 3; i++) await flushAsync();
+  assert.equal(harness.els.txOnBtn.disabled, true,
+    '补偿 POST pending 时旧源时间安全快照不能解锁');
+
+  sourcePhase = 'new-safe';
+  releaseFirstOff({ ok: true, status: 200,
+    json: async () => ({ code: 0, request_id: 'off-accepted-only', msg: 'queued', data: {} }) });
+  for (let i = 0; i < 8; i++) await flushAsync();
+  assert.equal(harness.els.txOnBtn.disabled, true,
+    '补偿仅 accepted-only 时，即使安全遥测源时间更新也不能解锁');
+
+  allowTrustedOff = true;
+  harness.els.txOffBtn.dispatch('click');
+  for (let i = 0; i < 8; i++) await flushAsync();
+  assert.equal(harness.els.txOnBtn.disabled, false,
+    '可信 OFF 终态与其后新源时间安全遥测同时成立后才可解锁');
+});
+
+test('R94 补偿失败时新源时间安全遥测仍不能解除危险锁', async () => {
+  const now = Date.now();
+  const source0 = now - 3000;
+  const source1 = now - 1000;
+  let afterFailedOff = false;
+  const txItems = () => fullTxItems(now).map((item) => item.identifier === 'S'
+    ? { ...item, value: 0, time: afterFailedOff ? source1 : source0 }
+    : item);
+  const harness = buildControlDom();
+  loadControlPage(harness, {
+    iot_onenet_config: JSON.stringify(LEGACY_CFG)
+  }, controlFetch({
+    txItems,
+    postImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      if (body.params.Switch === true) {
+        return { ok: true, status: 200,
+          json: async () => ({ code: 0, request_id: 'on-unresolved-fail-case', msg: 'queued', data: {} }) };
+      }
+      afterFailedOff = true;
+      return { ok: false, status: 503, json: async () => ({}) };
+    }
+  }));
+  await flushAsync();
+  harness.els.txOnBtn.dispatch('click');
+  harness.els.controlConfirmConfirm.dispatch('click');
+  for (let i = 0; i < 4; i++) await flushAsync();
+  harness.els.txOffBtn.dispatch('click');
+  for (let i = 0; i < 8; i++) await flushAsync();
+
+  assert.equal(harness.els.txOnBtn.disabled, true,
+    'OFF/最终补偿失败后，单凭更新的安全遥测不得解除危险锁');
+});
