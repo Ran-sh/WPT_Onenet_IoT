@@ -1022,7 +1022,8 @@ class OneNetService {
             encodeURIComponent(config.PRODUCT_ID) + '&device_name=' + encodeURIComponent(config.DEVICE_NAME) +
             '&identifier=' + encodeURIComponent(definition.cloudKey) +
             '&start_time=' + start + '&end_time=' + end +
-            '&sort=1&offset=0&limit=' + lim;
+            /* sort=0 为时间倒序，确保 limit 截断后保留时间窗内最新点。 */
+            '&sort=0&offset=0&limit=' + lim;
         var response;
         try {
             response = await fetchWithTimeout(url, { method: 'GET', headers: { 'Authorization': config.TOKEN } }, 10000);
