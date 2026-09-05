@@ -3787,7 +3787,8 @@ test('R40 云历史请求参数/响应兼容/严格校验', async () => {
   assert.match(calls[0].url, /identifier=F/);
   assert.match(calls[0].url, /start_time=/);
   assert.match(calls[0].url, /end_time=/);
-  assert.match(calls[0].url, /sort=1/);
+  assert.match(calls[0].url, /sort=0/,
+    'OneNET sort=0 才会让 offset=0/limit=N 返回时间窗内最新 N 条');
   assert.match(calls[0].url, /offset=0/);
   assert.match(calls[0].url, /limit=100/);
   assert.equal(calls[0].options.method, 'GET');
